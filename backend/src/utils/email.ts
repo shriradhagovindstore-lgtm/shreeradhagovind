@@ -520,7 +520,7 @@ const shell = (inner: string) => `
         (<a href="https://wa.me/917500533505" style="color:${ACCENT};font-weight:600;text-decoration:none">WhatsApp</a>)
       </p>
       <div style="border-top:1px solid #f0f0ee;padding-top:10px;color:#999;font-size:11px">
-        © ${new Date().getFullYear()} ${BRAND} · Made with love from Vrindavan · Radhe Radhe
+        © ${new Date().getFullYear()} ${BRAND} · Made with love from Heart of Vrindavan
       </div>
     </div>
   </div>
