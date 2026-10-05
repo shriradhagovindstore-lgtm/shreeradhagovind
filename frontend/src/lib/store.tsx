@@ -69,6 +69,14 @@ export type Order = {
   gstTotal?: number;
   total: number;
   refundedAmount?: number;
+  refund?: {
+    amount?: number;
+    method?: "upi" | null;
+    upiReference?: string;
+    refundedAt?: string | null;
+    refundedBy?: string;
+    notes?: string;
+  };
   courierCharge?: number;
   packagingCost?: number;
   razorpayFee?: number;
@@ -754,6 +762,20 @@ const mapOrder = (o: any, productLookup: Map<string, Product>): Order => {
     guestAccessToken: o?.guestAccessToken ? String(o.guestAccessToken) : undefined,
     courierTrackingData: o?.courierTrackingData || null,
     courierTrackingLastFetchedAt: o?.courierTrackingLastFetchedAt ? String(o.courierTrackingLastFetchedAt) : null,
+    refundedAmount: typeof o?.refundedAmount === "number" ? o.refundedAmount : 0,
+    refund: o?.refund
+      ? {
+          amount: typeof o.refund.amount === "number" ? o.refund.amount : 0,
+          method: o.refund.method === "upi" ? "upi" : null,
+          upiReference: o.refund.upiReference ? String(o.refund.upiReference) : "",
+          refundedAt: o.refund.refundedAt ? String(o.refund.refundedAt) : null,
+          refundedBy: o.refund.refundedBy ? String(o.refund.refundedBy) : "",
+          notes: o.refund.notes ? String(o.refund.notes) : "",
+        }
+      : undefined,
+    cancellationReason: o?.cancellationReason ? String(o.cancellationReason) : undefined,
+    cancelledBy: o?.cancelledBy ?? null,
+    cancelledAt: o?.cancelledAt ? String(o.cancelledAt) : undefined,
     deliveredAt: o?.deliveredAt ? String(o.deliveredAt) : null,
     statusHistory: Array.isArray(o?.statusHistory) ? o.statusHistory : [],
     createdAt: o?.createdAt ? new Date(o.createdAt).getTime() : Date.now(),

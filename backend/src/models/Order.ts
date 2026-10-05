@@ -139,6 +139,16 @@ const orderSchema = new Schema(
     invoiceSentToCustomerAt: { type: Date, default: null },
     courierCharge: { type: Number, default: 0, min: 0 },
     refundedAmount: { type: Number, default: 0, min: 0 },
+    refund: {
+      amount: { type: Number, default: 0, min: 0 },
+      method: { type: String, enum: ["upi", null], default: null },
+      upiReference: { type: String, default: "" },
+      refundedAt: { type: Date, default: null },
+      refundedBy: { type: String, default: "" },
+      notes: { type: String, default: "" },
+    },
+    refundLockUntil: { type: Date, default: null },
+    refundEmailSentAt: { type: Date, default: null },
     packagingCost: { type: Number, min: 0 },
     razorpayFee: { type: Number, min: 0 },
     productCost: { type: Number, min: 0 },
@@ -179,6 +189,7 @@ const orderSchema = new Schema(
 
 orderSchema.index({ "payment.razorpayOrderId": 1 }, { sparse: true });
 orderSchema.index({ "payment.razorpayPaymentId": 1 }, { sparse: true });
+orderSchema.index({ "refund.upiReference": 1 }, { sparse: true });
 orderSchema.index({ "analytics.utm.source": 1 }, { sparse: true });
 orderSchema.index({ "analytics.device": 1 }, { sparse: true });
 

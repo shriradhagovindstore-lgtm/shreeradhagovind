@@ -985,6 +985,23 @@ export const tpl = {
     `),
   }),
 
+  orderRefunded: (name: string, orderNum: string, amount: number, upiRef: string) => ({
+    subject: `Refund Processed — Order #${orderNum}`,
+    html: shell(`
+      <h2 style="margin:0 0 6px">Hare Krishna, ${name} 🙏</h2>
+      <p style="margin:0 0 12px;color:#555">Your refund for cancelled order <b>#${orderNum}</b> has been processed.</p>
+      <div style="margin:16px 0;padding:14px 16px;background:#f0fdfa;border:1px solid #ccfbf1;border-radius:10px">
+        <div style="font-size:12px;color:#0f766e;letter-spacing:.1em;text-transform:uppercase;font-weight:600">Refund Details</div>
+        <div style="margin-top:6px;font-size:16px;font-weight:700;color:#0f766e">₹${amount.toFixed(2)}</div>
+        <div style="margin-top:4px;font-size:14px;color:#333">Method: <b>UPI</b></div>
+        ${upiRef ? `<div style="margin-top:4px;font-size:13px;color:#555">UPI Reference: <b>${upiRef}</b></div>` : ''}
+        <div style="margin-top:6px;font-size:13px;color:#555">Please allow 1–3 business days for the amount to reflect in your bank account linked to this UPI ID.</div>
+      </div>
+      <p style="font-size:13px;color:#666">For any queries or assistance, contact us at <a href="mailto:support@shriradhagovindstore.com" style="color:#0f766e">support@shriradhagovindstore.com</a>.</p>
+      <p style="font-size:13px;color:#666">Thank you for shopping with Shri Radha Govind Store. Hare Krishna 🙏</p>
+    `),
+  }),
+
   ticketCreated: (name: string, ticketNo: string, subject: string, category: string, orderNo?: number | null) => ({
     subject: `Support Ticket Received — #${ticketNo}`,
     html: shell(`
@@ -1384,6 +1401,33 @@ export async function dispatchTicketReopenedEmail(
     await sendEmail({ to, subject: built.subject, html: built.html, bcc: SUPPORT_EMAIL_BCC });
     return { success: true };
   } catch (err: any) {
+    return { success: false, reason: err?.message || String(err) };
+  }
+}
+
+export async function dispatchOrderRefundedEmailOnce(
+  orderId: any,
+  to: string,
+  name: string,
+  orderNum: string,
+  amount: number,
+  upiRef: string
+): Promise<{ success: boolean; skipped?: boolean; reason?: string }> {
+  if (!orderId || !to) return { success: false, reason: "missing_args" };
+  const { Order } = await import("../models/Order");
+  const now = new Date();
+  const locked = await Order.findOneAndUpdate(
+    { _id: orderId, refundEmailSentAt: null },
+    { $set: { refundEmailSentAt: now } },
+    { new: true }
+  );
+  if (!locked) return { success: false, skipped: true, reason: "already_sent" };
+  try {
+    const built = tpl.orderRefunded(name, orderNum, amount, upiRef);
+    await sendEmail({ to, subject: built.subject, html: built.html });
+    return { success: true };
+  } catch (err: any) {
+    await Order.findByIdAndUpdate(orderId, { $set: { refundEmailSentAt: null } });
     return { success: false, reason: err?.message || String(err) };
   }
 }

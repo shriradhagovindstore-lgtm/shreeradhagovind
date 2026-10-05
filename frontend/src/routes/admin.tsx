@@ -121,7 +121,27 @@ function errorMessage(error: unknown, fallback: string) {
 }
 const getErrorMessage = errorMessage;
 
-function paymentBadgeClass(status: Order["payment"]["status"]) {
+export function isRefundPending(o: any): boolean {
+  if (!o) return false;
+  const isCancelled = o.status === "Cancelled";
+  const isRazorpay = o.payment?.method === "razorpay";
+  const isPaid = o.payment?.status === "paid";
+  const refunded = Number(o.refundedAmount) || Number(o.refund?.amount) || 0;
+  const total = Number(o.total) || 0;
+  const cod = Number(o.codFee) || 0;
+  const refundable = Math.max(0, total - cod - refunded);
+  return isCancelled && isRazorpay && isPaid && refundable > 0;
+}
+
+export function isOrderRefunded(o: any): boolean {
+  if (!o) return false;
+  const isPaidOrRefunded = o.payment?.status === "refunded";
+  const hasRefundAmount = (Number(o.refundedAmount) || 0) > 0 || (Number(o.refund?.amount) || 0) > 0;
+  return isPaidOrRefunded && hasRefundAmount;
+}
+
+function paymentBadgeClass(status: Order["payment"]["status"], o?: Order) {
+  if (o && isRefundPending(o)) return "bg-amber-500/15 text-amber-800 border border-amber-300 font-semibold";
   if (status === "paid") return "bg-green-600/10 text-green-700";
   if (status === "failed") return "bg-destructive/10 text-destructive";
   if (status === "refunded") return "bg-[var(--primary)]/10 text-[var(--primary)]";
@@ -130,6 +150,18 @@ function paymentBadgeClass(status: Order["payment"]["status"]) {
 
 function getPaymentReasonDetails(o: Order) {
   const status = o.payment?.status;
+  if (status === "refunded") {
+    return {
+      text: o.refund?.upiReference ? `Refunded (UPI Ref: ${o.refund.upiReference})` : "Refunded",
+      className: "text-[var(--primary)] font-medium",
+    };
+  }
+  if (isRefundPending(o)) {
+    return {
+      text: "Paid / Refund Pending",
+      className: "text-amber-700 font-semibold",
+    };
+  }
   if (status === "paid") {
     return {
       text: o.payment?.method === "razorpay" ? "Paid / Captured" : "Paid",
@@ -141,12 +173,6 @@ function getPaymentReasonDetails(o: Order) {
     return {
       text: rawReason || "Payment failed — reason not provided by payment gateway",
       className: "text-destructive font-medium",
-    };
-  }
-  if (status === "refunded") {
-    return {
-      text: "Refunded",
-      className: "text-[var(--primary)] font-medium",
     };
   }
   return {
@@ -895,6 +921,36 @@ function AdminRoot() {
                     </button>
                   );
                 })()}
+                {(() => {
+                  const refundPendingCount = orders.filter(isRefundPending).length;
+                  const active = orderStatusFilter === "refund_pending";
+                  return (
+                    <button
+                      key="refund_pending"
+                      onClick={() => setOrderStatusFilter("refund_pending")}
+                      className={`h-9 px-3 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                        active
+                          ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                          : refundPendingCount > 0
+                          ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                          : "bg-card text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                      }`}
+                    >
+                      <span>Refund Pending</span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          active
+                            ? "bg-white text-amber-900"
+                            : refundPendingCount > 0
+                            ? "bg-amber-200 text-amber-900"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {refundPendingCount}
+                      </span>
+                    </button>
+                  );
+                })()}
               </div>
             </div>
 
@@ -905,6 +961,8 @@ function AdminRoot() {
                 const filtered = (orders || []).filter((o) => {
                   if (orderStatusFilter === "invoice_requests") {
                     if (o.invoiceRequest?.status !== "pending") return false;
+                  } else if (orderStatusFilter === "refund_pending") {
+                    if (!isRefundPending(o)) return false;
                   } else if (orderStatusFilter !== "all" && o.status !== orderStatusFilter) {
                     return false;
                   }
@@ -973,6 +1031,18 @@ function AdminRoot() {
                               <span>Invoice Sent</span>
                             </span>
                           )}
+                          {isRefundPending(o) && (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 border border-amber-300 inline-flex items-center gap-1 shadow-2xs font-sans">
+                              <Clock className="h-3 w-3 text-amber-700" />
+                              <span>Refund Pending {formatINR(o.total)}</span>
+                            </span>
+                          )}
+                          {isOrderRefunded(o) && (
+                            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-900 border border-emerald-300 inline-flex items-center gap-1 shadow-2xs font-sans">
+                              <CheckCircle2 className="h-3 w-3 text-emerald-700" />
+                              <span>Refunded {formatINR(o.refund?.amount || o.refundedAmount || o.total)}</span>
+                            </span>
+                          )}
                           <span className="text-xs text-muted-foreground">
                             • Placed on {dateStr}
                           </span>
@@ -987,7 +1057,7 @@ function AdminRoot() {
                           <div>
                             <span className="text-muted-foreground">Payment: </span>
                             <span className="font-medium text-foreground">{paymentMethodStr}</span>
-                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${paymentBadgeClass(o.payment?.status)}`}>
+                            <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[11px] font-semibold ${paymentBadgeClass(o.payment?.status, o)}`}>
                               {paymentStatusStr}
                             </span>
                           </div>
@@ -1078,7 +1148,7 @@ function AdminRoot() {
                 label="Total Received"
                 value={formatINR(
                   (orders || [])
-                    .filter((o) => o?.payment?.status === "paid")
+                    .filter((o) => o?.payment?.status === "paid" && o?.status !== "Cancelled")
                     .reduce((s, o) => s + (Number(o?.total) || 0), 0),
                 )}
               />
@@ -1148,9 +1218,9 @@ function AdminRoot() {
                         <td className="font-medium text-xs text-foreground">{formatINR(o.total)}</td>
                         <td>
                           <span
-                            className={`px-2.5 py-0.5 rounded-full text-xs font-medium uppercase tracking-wider ${paymentBadgeClass(o.payment?.status || "pending")}`}
+                            className={`px-2.5 py-0.5 rounded-full text-xs font-medium uppercase tracking-wider ${paymentBadgeClass(o.payment?.status || "pending", o)}`}
                           >
-                            {o.payment?.status || "pending"}
+                            {isRefundPending(o) ? "PAID (REFUND PENDING)" : (o.payment?.status || "pending")}
                           </span>
                         </td>
                         <td className="text-xs max-w-[280px]">
@@ -1327,6 +1397,10 @@ function AdminRoot() {
               setEditingOrder(null);
             }}
             onSendInvoice={(o) => setFulfillingInvoiceOrder(o)}
+            onRefundSuccess={(updatedOrder) => {
+              setEditingOrder(updatedOrder);
+              refreshOrders().catch(() => {});
+            }}
           />
         )}
         {fulfillingInvoiceOrder && (
@@ -3931,6 +4005,7 @@ function OrderManager({
   onClose,
   onSave,
   onSendInvoice,
+  onRefundSuccess,
 }: {
   order: Order;
   fetchEvents?: (id: string) => Promise<{ events: CourierEvent[]; order: Order } | null>;
@@ -3944,6 +4019,7 @@ function OrderManager({
     note?: string;
   }) => void;
   onSendInvoice?: (order: Order) => void;
+  onRefundSuccess?: (order: Order) => void;
 }) {
   const { settings } = useStore();
   const [order, setOrder] = useState<Order>(initialOrder);
@@ -3960,6 +4036,7 @@ function OrderManager({
   const [showHoldModal, setShowHoldModal] = useState(false);
   const [pendingHoldReason, setPendingHoldReason] = useState<string>(initialOrder.holdReason ?? "");
   const [holdReasonError, setHoldReasonError] = useState("");
+  const [showManualRefundModal, setShowManualRefundModal] = useState(false);
   const [note, setNote] = useState("");
   const [courierChargeInput, setCourierChargeInput] = useState<number>(initialOrder.courierCharge ?? 0);
   const [savingCourierCharge, setSavingCourierCharge] = useState(false);
@@ -4590,6 +4667,69 @@ function OrderManager({
                   <span>{order.payment.failureReason}</span>
                 </div>
               )}
+
+              {/* Manual UPI Refund Section for Cancelled Online Orders */}
+              {isRefundPending(order) && (
+                <div className="mt-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/80 space-y-2">
+                  <div className="flex items-center gap-1.5 text-amber-950 font-bold text-xs">
+                    <Clock className="h-4 w-4 text-amber-700 shrink-0" />
+                    <span>Refund Pending</span>
+                  </div>
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    Customer paid <span className="font-semibold">{formatINR(order.total)}</span> via Razorpay.
+                    This order is cancelled and requires a manual UPI refund.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowManualRefundModal(true)}
+                    className="w-full py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Record Manual Refund</span>
+                  </button>
+                </div>
+              )}
+
+              {isOrderRefunded(order) && (
+                <div className="mt-3 p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/80 space-y-1.5 text-xs">
+                  <div className="flex items-center gap-1.5 text-emerald-950 font-bold">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
+                    <span>Manual Refund Processed</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-900">
+                    <span>Refunded Amount:</span>
+                    <span className="font-bold">{formatINR(order.refund?.amount || order.refundedAmount || order.total)}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-900">
+                    <span>Method:</span>
+                    <span className="font-semibold uppercase">UPI</span>
+                  </div>
+                  {order.refund?.upiReference && (
+                    <div className="flex justify-between text-emerald-900">
+                      <span>UPI Reference:</span>
+                      <span className="font-mono font-semibold">{order.refund.upiReference}</span>
+                    </div>
+                  )}
+                  {order.refund?.refundedAt && (
+                    <div className="flex justify-between text-emerald-800 text-[11px]">
+                      <span>Date:</span>
+                      <span>{new Date(order.refund.refundedAt).toLocaleString("en-IN")}</span>
+                    </div>
+                  )}
+                  {order.refund?.refundedBy && (
+                    <div className="flex justify-between text-emerald-800 text-[11px]">
+                      <span>Recorded By:</span>
+                      <span>{order.refund.refundedBy}</span>
+                    </div>
+                  )}
+                  {order.refund?.notes && (
+                    <div className="pt-1 border-t border-emerald-200 text-emerald-900 text-[11px]">
+                      <span className="font-medium">Note: </span>
+                      <span>{order.refund.notes}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -5086,6 +5226,197 @@ function OrderManager({
             </div>
           </div>
         )}
+
+        {/* ---- Manual UPI Refund Dialog ---- */}
+        {showManualRefundModal && (
+          <RecordManualRefundDialog
+            order={order}
+            onClose={() => setShowManualRefundModal(false)}
+            onSuccess={(updatedOrder) => {
+              setOrder((prev) => ({
+                ...prev,
+                ...updatedOrder,
+                payment: {
+                  ...prev.payment,
+                  ...(updatedOrder.payment || {}),
+                  status: "refunded",
+                },
+                refundedAmount: updatedOrder.refundedAmount,
+                refund: updatedOrder.refund,
+              }));
+              if (onRefundSuccess) onRefundSuccess(updatedOrder);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecordManualRefundDialog({
+  order,
+  onClose,
+  onSuccess,
+}: {
+  order: Order;
+  onClose: () => void;
+  onSuccess: (updatedOrder: Order) => void;
+}) {
+  const [upiReference, setUpiReference] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const refundableAmount = Math.max(
+    0,
+    (Number(order.total) || 0) - (Number(order.codFee) || 0) - (Number(order.refundedAmount) || 0)
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanRef = upiReference.trim();
+    if (!cleanRef || cleanRef.length < 6) {
+      toast.error("Please enter a valid UPI Reference / Transaction ID (minimum 6 characters).");
+      return;
+    }
+    try {
+      setSubmitting(true);
+      const res = await api<{ ok: boolean; message: string; order: any }>(
+        `/admin/orders/${order.id}/refund`,
+        {
+          method: "POST",
+          body: {
+            upiReference: cleanRef,
+            notes: notes.trim() || undefined,
+          },
+        }
+      );
+      if (res?.ok && res.order) {
+        toast.success(res.message || "Manual UPI refund recorded successfully!");
+        onSuccess(res.order);
+        onClose();
+      } else {
+        toast.error("Failed to record manual refund");
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to record manual refund");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[70] grid place-items-center p-4">
+      <div
+        className="bg-white text-foreground rounded-2xl border border-border p-6 w-full max-w-md shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150 font-sans"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b pb-3">
+          <div className="flex items-center gap-2 text-amber-700">
+            <RotateCcw className="h-5 w-5" />
+            <h3 className="font-bold text-base text-foreground">Record Manual UPI Refund</h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-stone-400 hover:text-stone-600 transition"
+          >
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="bg-amber-50/80 border border-amber-200/80 rounded-xl p-3 text-xs text-amber-900 space-y-1">
+            <p className="font-semibold flex items-center gap-1.5">
+              <span>Order #{displayOrderNumber(order)}</span>
+              <span>•</span>
+              <span>Refund Pending</span>
+            </p>
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              This records a manual UPI refund only. The website will not send money through Razorpay. Ensure you have transferred the funds via your banking/UPI app before recording.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="bg-stone-50 border border-stone-200 rounded-xl p-3">
+              <span className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold block">
+                Refund Amount
+              </span>
+              <span className="font-bold text-base text-emerald-700 mt-0.5 block">
+                {formatINR(refundableAmount)}
+              </span>
+              <span className="text-[10px] text-stone-400">Authoritative balance</span>
+            </div>
+
+            <div className="bg-stone-50 border border-stone-200 rounded-xl p-3">
+              <span className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold block">
+                Refund Method
+              </span>
+              <span className="font-bold text-base text-stone-900 mt-0.5 block">
+                UPI
+              </span>
+              <span className="text-[10px] text-stone-400">Manual transfer</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-foreground block mb-1">
+              UPI Reference / Transaction ID <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={upiReference}
+              onChange={(e) => setUpiReference(e.target.value)}
+              placeholder="e.g. 628192837192 or UPI-TXN-123456"
+              className="w-full h-10 rounded-xl border border-stone-300 bg-white px-3 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 uppercase"
+              required
+              autoFocus
+            />
+            <span className="text-[10px] text-stone-500 mt-1 block">
+              Reference number from your banking/UPI confirmation SMS or app
+            </span>
+          </div>
+
+          <div>
+            <label className="text-xs font-semibold text-foreground block mb-1">
+              Internal Audit Notes (Optional)
+            </label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Refunded to customer's Google Pay / PhonePe directly"
+              rows={2}
+              className="w-full rounded-xl border border-stone-300 bg-white p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2.5 pt-2 border-t">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="px-4 py-2 rounded-xl border text-xs font-semibold hover:bg-stone-50 transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting || !upiReference.trim()}
+              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+            >
+              {submitting ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  <span>Recording...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  <span>Confirm Manual Refund</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

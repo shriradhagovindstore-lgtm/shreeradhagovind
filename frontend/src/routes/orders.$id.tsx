@@ -165,6 +165,8 @@ function OrderDetail() {
           invoiceRequest: o.invoiceRequest,
           invoiceSentToCustomerAt: o.invoiceSentToCustomerAt,
           statusHistory: o.statusHistory,
+          refund: o.refund,
+          refundedAmount: o.refundedAmount,
           courierTrackingData: o.courierTrackingData || res?.tracking || null,
           createdAt: new Date(o.createdAt).getTime(),
         });
@@ -600,6 +602,43 @@ function OrderDetail() {
                   support@shriradhagovindstore.com
                 </a>.
               </p>
+
+              {/* Online Payment Refund Status for Customer */}
+              {order.payment?.method === "razorpay" && (
+                <>
+                  {order.payment?.status === "refunded" ? (
+                    <div className="mt-3 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+                      <div className="flex items-center gap-1.5 font-semibold text-xs text-emerald-950">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <span>Refund Processed ({formatINR(order.refund?.amount || order.refundedAmount || order.total)})</span>
+                      </div>
+                      <p className="text-xs text-emerald-800 leading-relaxed">
+                        Your refund of <span className="font-semibold">{formatINR(order.refund?.amount || order.refundedAmount || order.total)}</span> has been successfully processed via UPI.
+                      </p>
+                      {order.refund?.upiReference && (
+                        <div className="pt-1 border-t border-emerald-200/60 font-mono text-[11px] text-emerald-900">
+                          UPI Reference: <span className="font-bold">{order.refund.upiReference}</span>
+                        </div>
+                      )}
+                      {order.refund?.refundedAt && (
+                        <div className="text-[10px] text-emerald-700">
+                          Processed on {new Date(order.refund.refundedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                        </div>
+                      )}
+                    </div>
+                  ) : order.payment?.status === "paid" ? (
+                    <div className="mt-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1">
+                      <div className="flex items-center gap-1.5 font-semibold text-xs text-amber-950">
+                        <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Refund Pending ({formatINR(order.total)})</span>
+                      </div>
+                      <p className="text-xs text-amber-800 leading-relaxed">
+                        We have received your cancellation. Your refund of <span className="font-semibold">{formatINR(order.total)}</span> via UPI is currently being processed by our Vrindavan seva team. You will receive an email confirmation with the UPI reference number once completed.
+                      </p>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
         )}

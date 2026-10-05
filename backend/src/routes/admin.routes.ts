@@ -14,6 +14,7 @@ import {
   dispatchOrderInvoiceEmailOnce,
   dispatchOrderDeliveredEmailOnce,
   dispatchOrderCancelledEmailOnce,
+  dispatchOrderRefundedEmailOnce,
   dispatchRequestedInvoiceEmail,
   tpl,
   formatOrderNumber,
@@ -498,6 +499,133 @@ r.patch("/orders/:id/payment", async (_req, _res, next) => {
       "Manual payment status modifications are disabled. Payment status is automatically managed by Razorpay webhooks."
     )
   );
+});
+
+// Manual UPI refund recording for cancelled Razorpay-paid orders
+r.post("/orders/:id/refund", async (req, res, next) => {
+  try {
+    const refundSchema = z.object({
+      upiReference: z.string({ required_error: "UPI Reference is required" }).min(1, "UPI Reference is required"),
+      notes: z.string().optional(),
+    });
+    const parsed = refundSchema.parse(req.body);
+
+    const cleanUpiRef = parsed.upiReference.trim();
+    if (cleanUpiRef.length < 6) {
+      throw new HttpError(400, "Please provide a valid UPI Reference / Transaction ID (minimum 6 characters).");
+    }
+    const cleanNotes = (parsed.notes || "").trim().slice(0, 500);
+
+    const orderId = req.params.id;
+    let order = mongoose.Types.ObjectId.isValid(orderId) ? await Order.findById(orderId) : null;
+    if (!order && !isNaN(Number(orderId))) {
+      order = await Order.findOne({ orderNo: Number(orderId) });
+    }
+    if (!order) {
+      throw new HttpError(404, "Order not found");
+    }
+
+    if (order.status !== "Cancelled") {
+      throw new HttpError(
+        400,
+        order.status === "Delivered"
+          ? "Delivered orders must be processed via Returns & Refunds portal."
+          : `Order cannot be refunded from status "${order.status}". Only Cancelled orders are eligible.`
+      );
+    }
+
+    if (order.payment?.method !== "razorpay") {
+      throw new HttpError(400, "Manual refund is only applicable to online Razorpay prepaid orders.");
+    }
+
+    if (order.payment?.status === "refunded" || (order.refundedAmount && order.refundedAmount >= order.total)) {
+      throw new HttpError(409, "This order has already been refunded.");
+    }
+
+    if (order.payment?.status !== "paid") {
+      throw new HttpError(400, `Order payment status is "${order.payment?.status}". Only "paid" orders can be refunded.`);
+    }
+
+    // Authoritative server-side refundable amount calculation
+    const totalPaid = Number(order.total) || 0;
+    const codFee = Number(order.codFee) || 0;
+    const previouslyRefunded = Number(order.refundedAmount) || 0;
+    const refundableAmount = Math.max(0, Math.round((totalPaid - codFee - previouslyRefunded) * 100) / 100);
+
+    if (refundableAmount <= 0) {
+      throw new HttpError(400, "This order has no refundable balance.");
+    }
+
+    const adminIdentity = (req.user as any)?.email || (req.user as any)?.name || (req.user as any)?.sub || "admin";
+    const now = new Date();
+
+    // Atomic conditional update guaranteeing double-refund prevention
+    const updatedOrder = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        status: "Cancelled",
+        "payment.method": "razorpay",
+        "payment.status": "paid",
+        $or: [
+          { refundedAmount: { $lt: refundableAmount } },
+          { refundedAmount: { $exists: false } },
+        ],
+      },
+      {
+        $set: {
+          "payment.status": "refunded",
+          refundedAmount: refundableAmount,
+          refund: {
+            amount: refundableAmount,
+            method: "upi",
+            upiReference: cleanUpiRef,
+            refundedAt: now,
+            refundedBy: adminIdentity,
+            notes: cleanNotes,
+          },
+        },
+        $push: {
+          statusHistory: {
+            status: "Cancelled",
+            changedAt: now,
+            changedBy: adminIdentity,
+            note: `Manual UPI refund recorded. Amount: ₹${refundableAmount}. UPI Ref: ${cleanUpiRef}`,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    if (!updatedOrder) {
+      throw new HttpError(409, "Order has already been refunded or is being processed concurrently.");
+    }
+
+    // Asynchronous non-blocking idempotent customer email notification
+    const recipientEmail = updatedOrder.customerEmail || (updatedOrder.user as any)?.email;
+    const recipientName = updatedOrder.address?.name || (updatedOrder.user as any)?.name || "Devotee";
+    const orderNum = updatedOrder.orderNo ? String(updatedOrder.orderNo) : String(updatedOrder._id);
+
+    if (recipientEmail) {
+      dispatchOrderRefundedEmailOnce(
+        updatedOrder._id,
+        recipientEmail,
+        recipientName,
+        orderNum,
+        refundableAmount,
+        cleanUpiRef
+      ).catch((err) => {
+        console.error(`[admin.refund] Failed to dispatch refund email:`, err);
+      });
+    }
+
+    res.json({
+      ok: true,
+      message: "Manual UPI refund recorded successfully.",
+      order: updatedOrder,
+    });
+  } catch (e) {
+    next(e);
+  }
 });
 
 r.get("/users", async (_req, res, next) => {
@@ -1013,7 +1141,7 @@ r.get("/stats", async (_req, res, next) => {
       Order.countDocuments(),
       User.countDocuments({ role: "user" }),
       Order.aggregate([
-        { $match: { "payment.status": "paid" } },
+        { $match: { "payment.status": "paid", status: { $ne: "Cancelled" } } },
         { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
     ]);

@@ -214,6 +214,13 @@ function sanitizeCustomerOrder(orderDoc: any) {
   delete obj.invoiceOneTimeToken;
   delete obj.invoiceOneTimeTokenExpiresAt;
   delete obj.invoiceOneTimeTokenUsedAt;
+  delete obj.refundLockUntil;
+  if (obj.refund) {
+    const safeRefund = { ...obj.refund };
+    delete safeRefund.notes;
+    delete safeRefund.refundedBy;
+    obj.refund = safeRefund;
+  }
   if (Array.isArray(obj.items)) {
     obj.items = obj.items.map((item: any) => {
       const copy = { ...item };
