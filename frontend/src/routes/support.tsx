@@ -115,9 +115,16 @@ function SupportHelpCenterPage() {
   const fetchFaqs = useCallback(async () => {
     try {
       setLoadingFaqs(true);
-      const res = await api<{ ok: boolean; faqGroups: FAQCategoryGroup[] }>("/support/faq");
-      if (res?.ok && Array.isArray(res.faqGroups)) {
-        setFaqs(res.faqGroups);
+      const res = await api<{
+        categories?: FAQCategoryGroup[];
+        faqGroups?: FAQCategoryGroup[];
+        ok?: boolean;
+      }>("/support/faq");
+      const list = res?.categories ?? res?.faqGroups;
+      if (Array.isArray(list)) {
+        setFaqs(list);
+      } else {
+        setFaqs([]);
       }
     } catch {
       // Fallback local FAQ if network fails
@@ -286,15 +293,22 @@ function SupportHelpCenterPage() {
   };
 
   // Filtered FAQs
-  const filteredFaqs = faqs.flatMap((group) => {
+  const filteredFaqs = (Array.isArray(faqs) ? faqs : []).flatMap((group) => {
+    if (!group || !Array.isArray(group.faqs)) {
+      return [];
+    }
     if (selectedFaqCategory !== "ALL" && group.category !== selectedFaqCategory) {
       return [];
     }
     return group.faqs
       .filter((faq) => {
+        if (!faq || typeof faq.q !== "string") return false;
         if (!faqSearch.trim()) return true;
         const term = faqSearch.toLowerCase();
-        return faq.q.toLowerCase().includes(term) || faq.a.toLowerCase().includes(term);
+        return (
+          faq.q.toLowerCase().includes(term) ||
+          (typeof faq.a === "string" && faq.a.toLowerCase().includes(term))
+        );
       })
       .map((faq) => ({ ...faq, groupCategory: group.category }));
   });
