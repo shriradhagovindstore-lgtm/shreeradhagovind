@@ -4,6 +4,8 @@ import {
   useStore,
   displayOrderNumber,
   formatINR,
+  isRefundPending,
+  isOrderRefunded,
   type Order,
   type Settings,
   type Courier,
@@ -121,24 +123,7 @@ function errorMessage(error: unknown, fallback: string) {
 }
 const getErrorMessage = errorMessage;
 
-export function isRefundPending(o: any): boolean {
-  if (!o) return false;
-  const isCancelled = o.status === "Cancelled";
-  const isRazorpay = o.payment?.method === "razorpay";
-  const isPaid = o.payment?.status === "paid";
-  const refunded = Number(o.refundedAmount) || Number(o.refund?.amount) || 0;
-  const total = Number(o.total) || 0;
-  const cod = Number(o.codFee) || 0;
-  const refundable = Math.max(0, total - cod - refunded);
-  return isCancelled && isRazorpay && isPaid && refundable > 0;
-}
-
-export function isOrderRefunded(o: any): boolean {
-  if (!o) return false;
-  const isPaidOrRefunded = o.payment?.status === "refunded";
-  const hasRefundAmount = (Number(o.refundedAmount) || 0) > 0 || (Number(o.refund?.amount) || 0) > 0;
-  return isPaidOrRefunded && hasRefundAmount;
-}
+export { isRefundPending, isOrderRefunded };
 
 function paymentBadgeClass(status: Order["payment"]["status"], o?: Order) {
   if (o && isRefundPending(o)) return "bg-amber-500/15 text-amber-800 border border-amber-300 font-semibold";
@@ -951,6 +936,36 @@ function AdminRoot() {
                     </button>
                   );
                 })()}
+                {(() => {
+                  const refundedCount = orders.filter(isOrderRefunded).length;
+                  const active = orderStatusFilter === "refunded";
+                  return (
+                    <button
+                      key="refunded"
+                      onClick={() => setOrderStatusFilter("refunded")}
+                      className={`h-9 px-3 rounded-lg text-xs font-semibold whitespace-nowrap transition border flex items-center gap-1.5 ${
+                        active
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                          : refundedCount > 0
+                          ? "bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100"
+                          : "bg-card text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                      }`}
+                    >
+                      <span>Refunded</span>
+                      <span
+                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                          active
+                            ? "bg-white text-emerald-900"
+                            : refundedCount > 0
+                            ? "bg-emerald-200 text-emerald-900"
+                            : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {refundedCount}
+                      </span>
+                    </button>
+                  );
+                })()}
               </div>
             </div>
 
@@ -963,6 +978,8 @@ function AdminRoot() {
                     if (o.invoiceRequest?.status !== "pending") return false;
                   } else if (orderStatusFilter === "refund_pending") {
                     if (!isRefundPending(o)) return false;
+                  } else if (orderStatusFilter === "refunded") {
+                    if (!isOrderRefunded(o)) return false;
                   } else if (orderStatusFilter !== "all" && o.status !== orderStatusFilter) {
                     return false;
                   }
@@ -1375,7 +1392,7 @@ function AdminRoot() {
         {tab === "settings" && <SettingsPanel settings={settings} onSave={updateSettings} />}
         {tab === "coupons" && <CouponsManager />}
         {tab === "retention" && <RetentionLoyaltyManager />}
-        {tab === "returns" && <ReturnsManager />}
+        {tab === "returns" && <ReturnsManager onManageOrder={(o) => setEditingOrder(o)} />}
         {tab === "support" && <SupportManager />}
         {tab === "finance" && (
           <FinanceAnalyticsPanel
@@ -1399,7 +1416,7 @@ function AdminRoot() {
             onSendInvoice={(o) => setFulfillingInvoiceOrder(o)}
             onRefundSuccess={(updatedOrder) => {
               setEditingOrder(updatedOrder);
-              refreshOrders().catch(() => {});
+              refreshOrders(true).catch(() => {});
             }}
           />
         )}
@@ -1408,7 +1425,7 @@ function AdminRoot() {
             order={fulfillingInvoiceOrder}
             onClose={() => setFulfillingInvoiceOrder(null)}
             onSuccess={() => {
-              refreshOrders().catch(() => {});
+              refreshOrders(true).catch(() => {});
             }}
           />
         )}

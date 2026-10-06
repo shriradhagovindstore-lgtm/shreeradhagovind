@@ -790,6 +790,25 @@ export const displayOrderNumber = (order?: Pick<Order, "id" | "orderNo"> | null)
   return String(5000 + (hash % 5000)).padStart(4, "0");
 };
 
+export function isRefundPending(o: any): boolean {
+  if (!o) return false;
+  const isCancelled = o.status === "Cancelled";
+  const isRazorpay = o.payment?.method === "razorpay";
+  const isPaid = o.payment?.status === "paid";
+  const refunded = Number(o.refundedAmount) || Number(o.refund?.amount) || 0;
+  const total = Number(o.total) || 0;
+  const cod = Number(o.codFee) || 0;
+  const refundable = Math.max(0, total - cod - refunded);
+  return isCancelled && isRazorpay && isPaid && refundable > 0;
+}
+
+export function isOrderRefunded(o: any): boolean {
+  if (!o) return false;
+  const isPaidOrRefunded = o.payment?.status === "refunded";
+  const hasRefundAmount = (Number(o.refundedAmount) || 0) > 0 || (Number(o.refund?.amount) || 0) > 0;
+  return isPaidOrRefunded && hasRefundAmount;
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const apiEnabled = isApiEnabled();
   const [user, setUser] = useState<User>(null);
@@ -1066,7 +1085,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const adminAuthed = !!user && user.role === "admin";
 
   const refreshOrders = useCallback(
-    async (asAdmin = false) => {
+    async (asAdmin = adminAuthed) => {
       if (!apiEnabled || !getToken()) return;
       try {
         const ord = await api<{ orders: any[] }>(asAdmin ? "/admin/orders" : "/orders");
@@ -1076,7 +1095,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         /* ignore */
       }
     },
-    [apiEnabled, adminProducts],
+    [apiEnabled, adminProducts, adminAuthed],
   );
 
   const customers = useMemo(() => {
