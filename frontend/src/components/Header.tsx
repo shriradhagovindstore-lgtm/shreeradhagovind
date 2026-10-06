@@ -175,18 +175,18 @@ export function Header() {
       </div>
 
       <div className="border-t border-[#E7E1D6] bg-[#FFFFF4] text-[#2B211C]">
-        <div className="container-app flex h-10 items-center gap-0.5 sm:gap-1 overflow-x-auto lg:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="container-app flex h-9 sm:h-10 items-center gap-0.5 sm:gap-1 overflow-x-auto lg:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             onClick={() => setDrawerOpen(true)}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs sm:text-sm font-semibold text-[#166F77] hover:bg-[#F8F4EC] transition"
+            className="flex h-7 sm:h-8 shrink-0 items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 text-[11px] sm:text-sm font-semibold text-[#166F77] hover:bg-[#F8F4EC] transition"
           >
-            <Menu className="h-4 w-4" /> <span>All</span>
+            <Menu className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> <span>All</span>
           </button>
           <Shortcut label="Sacred Picks" search="sacred-picks" />
           {categoryTree.map((category) => (
             <div
               key={category.id}
-              className="relative shrink-0 flex items-center h-10 group"
+              className="relative shrink-0 flex items-center h-9 sm:h-10 group"
               onMouseEnter={() => setOpenCategory(category.id)}
               onMouseLeave={() => setOpenCategory(null)}
             >
@@ -195,7 +195,7 @@ export function Header() {
                   to="/shop"
                   search={{ cat: category.name } as never}
                   onClick={() => setOpenCategory(null)}
-                  className="px-2 sm:px-2.5 py-1 text-xs sm:text-[13px] font-medium text-[#2B211C] hover:text-[#166F77] transition whitespace-nowrap"
+                  className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 text-[11px] sm:text-[13px] font-medium text-[#2B211C] hover:text-[#166F77] transition whitespace-nowrap"
                 >
                   {category.name}
                 </Link>
@@ -207,11 +207,11 @@ export function Header() {
                       e.stopPropagation();
                       setOpenCategory((prev) => (prev === category.id ? null : category.id));
                     }}
-                    className="pr-2 pl-0.5 py-1 text-[#6A605A] hover:text-[#166F77] transition"
+                    className="pr-1.5 sm:pr-2 pl-0.5 py-0.5 sm:py-1 text-[#6A605A] hover:text-[#166F77] transition"
                     aria-label={`Toggle ${category.name} dropdown`}
                   >
                     <ChevronDown
-                      className={`h-3 w-3 transition-transform duration-200 ${
+                      className={`h-2.5 w-2.5 sm:h-3 sm:w-3 transition-transform duration-200 ${
                         openCategory === category.id ? "rotate-180 text-[#166F77]" : ""
                       }`}
                     />
@@ -232,9 +232,9 @@ export function Header() {
           ))}
           <Link
             to="/blog"
-            className="flex shrink-0 h-8 items-center gap-1.5 rounded-md px-2.5 text-xs sm:text-[13px] font-medium text-[#166F77] hover:text-[#135E65] hover:bg-[#F8F4EC] transition whitespace-nowrap"
+            className="flex shrink-0 h-7 sm:h-8 items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 text-[11px] sm:text-[13px] font-medium text-[#166F77] hover:text-[#135E65] hover:bg-[#F8F4EC] transition whitespace-nowrap"
           >
-            <Newspaper className="h-3.5 w-3.5" /> Devotional Blog
+            <Newspaper className="h-3 w-3 sm:h-3.5 sm:w-3.5" /> Devotional Blog
           </Link>
         </div>
       </div>
@@ -263,7 +263,7 @@ function Shortcut({ label, search }: { label: string; search: string }) {
     <Link
       to="/shop"
       search={{ q: search } as never}
-      className="flex h-8 shrink-0 items-center rounded-md px-2 sm:px-2.5 text-xs sm:text-[13px] font-medium text-[#2B211C] hover:text-[#166F77] hover:bg-[#F8F4EC] transition whitespace-nowrap"
+      className="flex h-7 sm:h-8 shrink-0 items-center rounded-md px-1.5 sm:px-2.5 text-[11px] sm:text-[13px] font-medium text-[#2B211C] hover:text-[#166F77] hover:bg-[#F8F4EC] transition whitespace-nowrap"
     >
       {label}
     </Link>
