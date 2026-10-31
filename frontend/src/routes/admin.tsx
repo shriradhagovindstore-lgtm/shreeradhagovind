@@ -27,6 +27,11 @@ import { RetentionLoyaltyManager } from "@/components/admin/RetentionLoyaltyMana
 import { ReturnsManager } from "@/components/admin/ReturnsManager";
 import { SupportManager } from "@/components/admin/SupportManager";
 import { slugify } from "@/lib/seo";
+import {
+  DEFAULT_DIWALI_EXPIRY_IST,
+  formatISTDateTime,
+  getDiwaliThemeStatus,
+} from "@/lib/festiveTheme";
 import { toast } from "sonner";
 import {
   Lock,
@@ -3296,6 +3301,7 @@ function SettingsPanel({
 }) {
   const [s, setS] = useState<Settings>(settings);
   const [savingDevProfile, setSavingDevProfile] = useState(false);
+  const [savingDiwaliToggle, setSavingDiwaliToggle] = useState(false);
 
   useEffect(() => {
     setS(settings);
@@ -3541,6 +3547,129 @@ function SettingsPanel({
             />
             <span className="font-medium">Enable Cash on Delivery (COD)</span>
           </label>
+        </section>
+
+        {/* Section: Diwali Festive Decoration & Expiry Management */}
+        <section className="bg-white rounded-xl border border-border p-6 shadow-sm space-y-4 lg:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/70 pb-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🪔</span>
+                <h2 className="font-display text-xl text-[#166F77]">Diwali Decoration</h2>
+                {(() => {
+                  const status = getDiwaliThemeStatus(s.diwaliThemeEnabled !== false, s.diwaliThemeExpiry);
+                  if (status === "Active") {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Active
+                      </span>
+                    );
+                  }
+                  if (status === "Expired") {
+                    return (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                        <span className="h-2 w-2 rounded-full bg-rose-500" />
+                        Expired
+                      </span>
+                    );
+                  }
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                      <span className="h-2 w-2 rounded-full bg-amber-500" />
+                      Manually Disabled
+                    </span>
+                  );
+                })()}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Seasonal festive visual decoration for the customer-facing storefront with automatic IST expiry.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={savingDiwaliToggle}
+                onClick={async () => {
+                  const newEnabled = s.diwaliThemeEnabled === false;
+                  setSavingDiwaliToggle(true);
+                  try {
+                    setS((prev) => ({ ...prev, diwaliThemeEnabled: newEnabled }));
+                    await onSave({ diwaliThemeEnabled: newEnabled, diwaliThemeExpiry: s.diwaliThemeExpiry });
+                  } finally {
+                    setSavingDiwaliToggle(false);
+                  }
+                }}
+                className={`inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold shadow-xs transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed ${
+                  s.diwaliThemeEnabled !== false
+                    ? "bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300"
+                    : "bg-[#166F77] hover:bg-[#12585f] text-white"
+                }`}
+              >
+                {savingDiwaliToggle ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Saving...
+                  </span>
+                ) : s.diwaliThemeEnabled !== false ? (
+                  "Turn Decoration OFF"
+                ) : (
+                  "Turn Decoration ON"
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-[#FFFFF4] border border-[#E7E1D6] rounded-xl p-4 text-xs text-[#4A3E37] space-y-2">
+            <p className="font-semibold text-[#166F77] flex items-center gap-1.5">
+              <span>✨ Decoration Scope & Customer Experience</span>
+            </p>
+            <p className="leading-relaxed">
+              When active, this master setting displays all seasonal Diwali decorations across all customer-facing storefront pages:
+              <strong> upper fairy lights</strong>, <strong>floating brass diyas</strong>, <strong>golden temple glow</strong>, <strong>header marigold & mango-leaf toran</strong>, <strong>homepage "शुभ दीपावली 🪔" devotional greeting</strong>, and <strong>symmetrical footer lotus rangoli</strong>.
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              Admin Dashboard (<code>/admin</code>), checkout payments, orders, and product data remain completely untouched and undecorated.
+            </p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4 pt-1">
+            <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-4 space-y-2">
+              <span className="text-xs font-semibold text-stone-900 block">Automatic Expiry Schedule</span>
+              <div className="text-sm font-medium text-stone-800 flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-[#166F77]" />
+                <span>{formatISTDateTime(s.diwaliThemeExpiry || DEFAULT_DIWALI_EXPIRY_IST)}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Diwali 2026 is on Nov 8. Decorations remain eligible through Nov 13, and <strong>automatically deactivate at 14 Nov 2026, 00:00:00 IST</strong> in the Asia/Kolkata timezone. After expiry, decorations remain OFF even if the toggle is ON.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 bg-stone-50/70 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-stone-900">Custom Expiry Date/Time (IST)</span>
+                {s.diwaliThemeExpiry && s.diwaliThemeExpiry !== DEFAULT_DIWALI_EXPIRY_IST && (
+                  <button
+                    type="button"
+                    onClick={() => setS({ ...s, diwaliThemeExpiry: DEFAULT_DIWALI_EXPIRY_IST })}
+                    className="text-[11px] text-[#166F77] hover:underline font-medium"
+                  >
+                    Reset to Nov 14 IST
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                value={s.diwaliThemeExpiry ?? DEFAULT_DIWALI_EXPIRY_IST}
+                onChange={(e) => setS({ ...s, diwaliThemeExpiry: e.target.value })}
+                placeholder="2026-11-14T00:00:00+05:30"
+                className="w-full rounded-lg border bg-background p-2.5 text-xs font-mono focus:outline-none focus:border-primary"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Explicit Asia/Kolkata ISO format (e.g. <code>2026-11-14T00:00:00+05:30</code>). Independent of visitor browser timezone.
+              </p>
+            </div>
+          </div>
         </section>
 
         {/* Section 5: About Us Page Media & Photos */}

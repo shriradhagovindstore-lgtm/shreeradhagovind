@@ -35,6 +35,8 @@ const settingsSchema = new Schema(
       earnPointsOnDiscountedSubtotal: { type: Boolean, default: true },
     },
     returnWindowHours: { type: Number, default: 48 },
+    diwaliThemeEnabled: { type: Boolean, default: true },
+    diwaliThemeExpiry: { type: String, default: "2026-11-14T00:00:00+05:30" },
     tiers: [
       {
         id: { type: String, required: true },

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 import { toast } from "sonner";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { DiwaliDecoration } from "@/components/DiwaliDecoration";
 const defaultHeroBanner = "/home-devotional-hero.png";
 const logo = "/brand-logo-large.png";
 
@@ -350,7 +351,8 @@ export function AuthShell({ title, subtitle, children }: { title: string; subtit
   const heroBanner = settings?.homeHeroImage?.trim() || defaultHeroBanner;
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
+    <div className="min-h-screen grid lg:grid-cols-2 relative">
+      <DiwaliDecoration isAuth />
       <div className="hidden lg:block relative overflow-hidden bg-slate-900">
         <img
           src={heroBanner}

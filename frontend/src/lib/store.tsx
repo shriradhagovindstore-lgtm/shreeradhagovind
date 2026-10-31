@@ -254,10 +254,14 @@ export type Settings = {
   homeHeroVideo?: string;
   aboutStoryVideo?: string;
   returnWindowHours?: number;
+  diwaliThemeEnabled?: boolean;
+  diwaliThemeExpiry?: string;
 };
 
 const DEFAULT_SETTINGS: Settings = {
   returnWindowHours: 48,
+  diwaliThemeEnabled: true,
+  diwaliThemeExpiry: "2026-11-14T00:00:00+05:30",
   siteName: "Shri Radha Govind Store",
   tagline: "Made With Love From The Heart Of Vrindavan",
   supportEmail: "support@shriradhagovindstore.com",
@@ -579,6 +583,8 @@ const mapSettings = (s: any): Partial<Settings> => ({
   showDeveloperProfile: s.showDeveloperProfile !== false,
   homeHeroVideo: s.homeHeroVideo !== undefined ? s.homeHeroVideo : "/Homepage_banner.mp4",
   aboutStoryVideo: s.aboutStoryVideo !== undefined ? s.aboutStoryVideo : "/About_US_story_video.mp4",
+  diwaliThemeEnabled: s.diwaliThemeEnabled !== undefined ? Boolean(s.diwaliThemeEnabled) : true,
+  diwaliThemeExpiry: s.diwaliThemeExpiry || "2026-11-14T00:00:00+05:30",
 });
 
 const mapCategory = (c: any): Category => ({
@@ -974,6 +980,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
         .catch((e: any) => {
           console.warn("[api] initial settings load failed:", e?.message);
+          // Failsafe: if settings fail to load from API, keep decorations OFF
+          setSettings((s) => ({ ...s, diwaliThemeEnabled: false }));
         })
         .finally(() => {
           setIsSettingsLoaded(true);

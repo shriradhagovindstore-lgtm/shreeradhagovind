@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { Layout } from "@/components/Layout";
+import { DiwaliHomepageGreeting } from "@/components/DiwaliDecoration";
 import { ProductCard } from "@/components/ProductCard";
 import { GoogleReviewsSection } from "@/components/GoogleReviews/GoogleReviewsSection";
 import { InstagramSection } from "@/components/InstagramFeed/InstagramSection";
@@ -285,6 +286,9 @@ function Home() {
           </div>
         </div>
       </section>
+
+      {/* Seasonal Diwali Greeting */}
+      <DiwaliHomepageGreeting />
 
       {/* 2. PRODUCT SECTIONS & PRESERVED HERO IMAGE MIDDLE SECTION */}
       {!isProductsLoaded && categoryShelves.length === 0 ? (

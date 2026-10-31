@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Settings } from "../models/Settings";
 import { requireAuth, requireAdmin } from "../middleware/auth";
 import { env } from "../config/env";
+import { normalizeISTExpiry } from "../utils/festiveTheme";
 
 const r = Router();
 
@@ -39,6 +40,8 @@ r.patch("/", requireAuth, requireAdmin, async (req, res, next) => {
         showDeveloperProfile: z.boolean().optional(),
         homeHeroVideo: z.string().optional(),
         aboutStoryVideo: z.string().optional(),
+        diwaliThemeEnabled: z.boolean().optional(),
+        diwaliThemeExpiry: z.string().optional().transform((val) => val ? normalizeISTExpiry(val) : undefined),
       })
       .parse(req.body);
     const s = await Settings.findOneAndUpdate({ key: "global" }, data, { new: true, upsert: true });

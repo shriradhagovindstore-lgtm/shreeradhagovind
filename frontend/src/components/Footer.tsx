@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/lib/store";
 import { buildDefaultWhatsAppUrl } from "@/lib/whatsapp";
+import { FooterDiwaliRangoli } from "@/components/DiwaliDecoration";
 
 const logo = "/brand-logo-112.png";
 
@@ -25,6 +26,8 @@ export function Footer() {
 
   return (
     <footer className="mt-12 shrink-0 border-t border-[#E7E1D6] bg-[#FFFFF4] text-[#2B211C]">
+      {/* Symmetrical Seasonal Diwali Rangoli Motif */}
+      <FooterDiwaliRangoli />
 
       {/* 4-Column Main Footer Grid with Natural Height */}
       <div className="container-app grid gap-10 py-12 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">

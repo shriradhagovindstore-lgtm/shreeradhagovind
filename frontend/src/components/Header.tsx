@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
 import { useStore, type Category } from "@/lib/store";
+import { HeaderToran } from "@/components/DiwaliDecoration";
 
 const logo = "/brand-logo-112.png";
 
@@ -244,6 +245,9 @@ export function Header() {
           <span className="line-clamp-1">{settings.announcement}</span>
         </div>
       )}
+
+      {/* Seasonal Festive Toran */}
+      <HeaderToran />
 
       <AllDrawer
         open={drawerOpen}
