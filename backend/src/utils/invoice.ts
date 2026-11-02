@@ -79,6 +79,7 @@ export type InvoiceData = {
     razorpayPaymentId?: string;
   };
   createdAt?: Date | string | number;
+  packedByName?: string;
 };
 
 // Official Store Details (WordPress Reference Match)
@@ -808,3 +809,281 @@ export async function generateInvoicePDF(data: InvoiceData): Promise<Buffer> {
   });
 }
 
+
+
+/**
+ * Generates an operational Packing Slip and Dispatch Manifest PDF for store packaging operations.
+ * Guaranteed to fit on exactly ONE A4 portrait page for store fulfillment.
+ */
+export async function generatePackingSlipPDF(data: InvoiceData): Promise<Buffer> {
+  const enrichedItems = await enrichInvoiceItems(data.items);
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({
+        size: "A4",
+        margin: 32,
+        bufferPages: true,
+        autoFirstPage: true,
+      });
+
+      // Prevent automatic page breaks pushing content onto page 2
+      doc.page.margins.bottom = 0;
+      doc.page.margins.top = 0;
+
+      const chunks: Buffer[] = [];
+      doc.on("data", (c) => chunks.push(c as Buffer));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+
+      const left = 32;
+      const right = doc.page.width - 32;
+      const usableW = right - left;
+
+      // Clean Order & Date
+      const orderNumberStr =
+        typeof data.orderNo === "number"
+          ? String(data.orderNo)
+          : (data.orderNo || data.orderId.slice(-6)).toUpperCase();
+
+      const orderDate = data.createdAt ? new Date(data.createdAt) : new Date();
+      const orderDateStr = orderDate.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+      // 1. COMPACT BRANDED HEADER
+      const headerY = 26;
+      const headerH = 38;
+      doc.rect(left, headerY, usableW, headerH).fill("#166F77");
+      doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(13);
+      doc.text("SHRI RADHA GOVIND STORE", left + 12, headerY + 7);
+      doc.font("Helvetica").fontSize(7.5).fillColor("#e6f4f1");
+      doc.text("PACKING SLIP & DISPATCH MANIFEST • VRINDAVAN DHAM", left + 12, headerY + 23);
+
+      doc.font("Helvetica-Bold").fontSize(12).fillColor("#ffffff");
+      doc.text(`ORDER #${orderNumberStr}`, right - 160, headerY + 7, { width: 148, align: "right" });
+      doc.font("Helvetica").fontSize(7.5).fillColor("#e6f4f1");
+      doc.text(`Date: ${orderDateStr}`, right - 160, headerY + 23, { width: 148, align: "right" });
+
+      let curY = headerY + headerH + 6; // Y = 70
+
+      // 2. COD / PREPAID ALERT BAR
+      const isCod = (data.payment?.method || "").toLowerCase() === "cod";
+      const alertH = 20;
+      if (isCod) {
+        doc.rect(left, curY, usableW, alertH).fillAndStroke("#fef3c7", "#f59e0b");
+        doc.fillColor("#92400e").font("Helvetica-Bold").fontSize(8.5);
+        doc.text(
+          `CASH ON DELIVERY (COD) — COLLECT Rs. ${round2(data.total).toLocaleString("en-IN")}`,
+          left + 10,
+          curY + 5.5
+        );
+        doc.font("Helvetica").fontSize(7.5).fillColor("#78350f");
+        doc.text("Affix COD Waybill Label and verify cash collection on delivery.", right - 260, curY + 6, {
+          width: 250,
+          align: "right",
+        });
+      } else {
+        doc.rect(left, curY, usableW, alertH).fillAndStroke("#ecfdf5", "#10b981");
+        doc.fillColor("#065f46").font("Helvetica-Bold").fontSize(8.5);
+        doc.text("PREPAID ORDER — Rs. 0 DUE ON DELIVERY (DO NOT COLLECT CASH)", left + 10, curY + 5.5);
+        doc.font("Helvetica").fontSize(7.5).fillColor("#047857");
+        doc.text("Payment verified online via Razorpay.", right - 220, curY + 6, {
+          width: 210,
+          align: "right",
+        });
+      }
+
+      curY += alertH + 7; // Y = 97
+
+      // 3. TWO-COLUMN: RECIPIENT DELIVERY DETAILS & LOGISTICS
+      const colGap = 12;
+      const colW = (usableW - colGap) / 2;
+      const col1X = left;
+      const col2X = left + colW + colGap;
+
+      // Pre-calculate Left Card Content
+      const addrLines: string[] = [];
+      if (data.address?.line1?.trim()) addrLines.push(data.address.line1.trim());
+      if (data.address?.line2?.trim()) addrLines.push(`Landmark: ${data.address.line2.trim()}`);
+      if (data.address?.postOffice?.trim()) addrLines.push(`PO: ${data.address.postOffice.trim()}`);
+      const cityStatePin = [
+        data.address?.city,
+        data.address?.state,
+        data.address?.pincode ? `PIN: ${data.address.pincode}` : "",
+      ]
+        .filter(Boolean)
+        .join(", ");
+      if (cityStatePin) addrLines.push(cityStatePin);
+
+      const phoneParts: string[] = [];
+      if (data.address?.phone) phoneParts.push(`Phone: ${data.address.phone}`);
+      if (data.address?.alternatePhone) phoneParts.push(`Alt: ${data.address.alternatePhone}`);
+      if (phoneParts.length > 0) addrLines.push(phoneParts.join(" | "));
+      if (data.customerEmail) addrLines.push(`Email: ${data.customerEmail}`);
+
+      // Dynamic Card Height (Calculated so cards are proportional and compact)
+      const estimatedAddrHeight = 22 + addrLines.length * 11;
+      const cardH = Math.max(102, Math.min(estimatedAddrHeight + 6, 120));
+
+      // Draw Card 1: Customer & Delivery Address
+      doc.rect(col1X, curY, colW, cardH).strokeColor("#d1d5db").lineWidth(0.75).stroke();
+      doc.rect(col1X, curY, colW, 16).fill("#f3f4f6");
+      doc.fillColor("#1f2937").font("Helvetica-Bold").fontSize(8);
+      doc.text("CUSTOMER & DELIVERY ADDRESS", col1X + 8, curY + 4);
+
+      let aY = curY + 20;
+      doc.font("Helvetica-Bold").fontSize(9).fillColor("#111827");
+      doc.text(data.customerName || "Customer", col1X + 8, aY, { width: colW - 16, lineBreak: false });
+      aY += 12;
+
+      doc.font("Helvetica").fontSize(7.5).fillColor("#374151");
+      addrLines.forEach((line) => {
+        if (aY + 10 <= curY + cardH) {
+          doc.text(line, col1X + 8, aY, { width: colW - 16, lineBreak: false, ellipsis: true });
+          aY += 10.5;
+        }
+      });
+
+      // Draw Card 2: Dispatch & Courier Manifest
+      doc.rect(col2X, curY, colW, cardH).strokeColor("#d1d5db").lineWidth(0.75).stroke();
+      doc.rect(col2X, curY, colW, 16).fill("#f3f4f6");
+      doc.fillColor("#1f2937").font("Helvetica-Bold").fontSize(8);
+      doc.text("DISPATCH & COURIER MANIFEST", col2X + 8, curY + 4);
+
+      let dY = curY + 21;
+      const dispatchRows: [string, string][] = [
+        ["Order Number:", `#${orderNumberStr}`],
+        ["Order Status:", data.status || "Processing"],
+        ["Assigned Courier:", data.courier || "Pending Assignment"],
+        ["Tracking / AWB:", data.trackingId || "Pending Generation"],
+        ["Payment Mode:", isCod ? "COD" : "Prepaid"],
+        ["Total Amount:", `Rs. ${round2(data.total).toLocaleString("en-IN")}`],
+      ];
+
+      dispatchRows.forEach(([label, val]) => {
+        doc.font("Helvetica").fontSize(7.5).fillColor("#4b5563").text(label, col2X + 8, dY, { width: 90 });
+        doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#111827").text(val, col2X + 98, dY, { width: colW - 106, lineBreak: false });
+        dY += 12;
+      });
+
+      curY += cardH + 7;
+
+      // 4. ITEMS TO PACK TABLE
+      const isLargeOrder = enrichedItems.length > 5;
+      const thH = 16;
+      doc.rect(left, curY, usableW, thH).fill("#1f2937");
+      doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(7.5);
+      doc.text("PACK", left + 8, curY + 4, { width: 30 });
+      doc.text("#", left + 40, curY + 4, { width: 16 });
+      doc.text("PRODUCT / ITEM DESCRIPTION", left + 62, curY + 4, { width: 270 });
+      doc.text("HSN", left + 342, curY + 4, { width: 55, align: "center" });
+      doc.text("QTY TO PACK", right - 85, curY + 4, { width: 75, align: "center" });
+
+      curY += thH;
+
+      let totalUnitsToPack = 0;
+      const baseRowH = isLargeOrder ? 17 : 20;
+
+      enrichedItems.forEach((item, idx) => {
+        const itemQty = Number(item.qty) || 1;
+        totalUnitsToPack += itemQty;
+
+        const hasCombos = item.comboComponents && item.comboComponents.length > 0;
+        const comboCount = hasCombos && item.comboComponents ? item.comboComponents.length : 0;
+        const rowH = hasCombos ? baseRowH + comboCount * 11 + 2 : baseRowH;
+
+        // Alternating zebra stripe
+        if (idx % 2 === 1) {
+          doc.rect(left, curY, usableW, rowH).fill("#f9fafb");
+        }
+        doc.rect(left, curY, usableW, rowH).strokeColor("#e5e7eb").lineWidth(0.5).stroke();
+
+        // Checkbox square for physical checking
+        const boxSize = isLargeOrder ? 9 : 10;
+        doc.rect(left + 12, curY + 4, boxSize, boxSize).strokeColor("#4b5563").lineWidth(0.75).stroke();
+
+        // Index
+        doc.font("Helvetica").fontSize(7.5).fillColor("#6b7280");
+        doc.text(String(idx + 1), left + 40, curY + 5);
+
+        // Product Name
+        doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827");
+        doc.text(item.name || "Product", left + 62, curY + 5, { width: 270, lineBreak: false, ellipsis: true });
+
+        // HSN
+        doc.font("Helvetica").fontSize(7.5).fillColor("#4b5563");
+        doc.text(item.hsnCode || "-", left + 342, curY + 5, { width: 55, align: "center" });
+
+        // Qty
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#166F77");
+        doc.text(`${itemQty} units`, right - 85, curY + 4.5, { width: 75, align: "center" });
+
+        // Render Combo Components breakdown if applicable
+        if (hasCombos && item.comboComponents) {
+          let compY = curY + baseRowH - 1;
+          item.comboComponents.forEach((comp) => {
+            const compTotalUnits = (Number(comp.qty) || 1) * itemQty;
+            doc.font("Helvetica").fontSize(7).fillColor("#4b5563");
+            doc.text(`• Pack: ${comp.name} (${compTotalUnits} pcs)`, left + 72, compY, { width: 260, lineBreak: false, ellipsis: true });
+            compY += 10.5;
+          });
+        }
+
+        curY += rowH;
+      });
+
+      // Total Units Bar
+      const totalBarH = 17;
+      doc.rect(left, curY, usableW, totalBarH).fill("#f3f4f6");
+      doc.rect(left, curY, usableW, totalBarH).strokeColor("#d1d5db").lineWidth(0.75).stroke();
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827");
+      doc.text("TOTAL ITEMS TO PACK:", left + 10, curY + 4.5);
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor("#166F77");
+      doc.text(`${totalUnitsToPack} units across ${enrichedItems.length} product(s)`, right - 220, curY + 4, {
+        width: 210,
+        align: "right",
+      });
+
+      curY += totalBarH + 7;
+
+      // 5. PACKING VERIFICATION & QUALITY CHECK BOX
+      const staffPackedBy = data.packedByName || "Govind Brajwasi (Shop Manager)";
+      const boxH = 58;
+      doc.rect(left, curY, usableW, boxH).strokeColor("#166F77").lineWidth(0.75).stroke();
+      doc.rect(left, curY, usableW, 15).fill("#166F77");
+      doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(7.5);
+      doc.text("OPERATIONAL PACKING SIGN-OFF & QUALITY ASSURANCE", left + 8, curY + 3.5);
+
+      let qY = curY + 20;
+      doc.rect(left + 10, qY, 8.5, 8.5).strokeColor("#374151").lineWidth(0.75).stroke();
+      doc.font("Helvetica").fontSize(7.5).fillColor("#1f2937");
+      doc.text("Physical product quantity and quality inspected before sealing package.", left + 24, qY + 0.5);
+
+      qY += 12;
+      doc.rect(left + 10, qY, 8.5, 8.5).strokeColor("#374151").lineWidth(0.75).stroke();
+      doc.text("Fragile/Devotional items protected with secure bubble wrap cushioning.", left + 24, qY + 0.5);
+
+      // Sign-off line
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#111827");
+      doc.text(`Packed By: ${staffPackedBy}`, left + 10, curY + 45);
+      doc.font("Helvetica").fontSize(7.5).fillColor("#4b5563");
+      doc.text("Signature: __________________________    Date: ______________", right - 240, curY + 45);
+
+      // 6. EXACT SINGLE-PAGE FOOTER
+      const footerY = doc.page.height - 24;
+      doc.font("Helvetica").fontSize(7.5).fillColor("#6b7280");
+      doc.text(
+        "Shri Radha Govind Store • 155, 2nd Floor, Madan Mohan Ghera, Vrindavan 281121 • Ph: +91 75005 33505",
+        left,
+        footerY,
+        { width: usableW, align: "center", lineBreak: false }
+      );
+
+      doc.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}

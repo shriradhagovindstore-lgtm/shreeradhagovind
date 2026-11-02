@@ -1,3 +1,4 @@
+import { ShopManagerDashboard } from "../components/admin/ShopManagerDashboard";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -215,47 +216,84 @@ async function downloadOrderInvoicePdf(order: Order) {
   }
 }
 
+async function downloadOrderPackingSlipPdf(order: Order) {
+  try {
+    const token = getToken();
+    const orderNum = displayOrderNumber(order);
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(`${API_URL}/admin/orders/${order.id}/packing-slip`, { headers });
+    if (!res.ok) {
+      throw new Error(`Failed to download packing slip (${res.status})`);
+    }
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `PackingSlip-${orderNum}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    toast.success(`Packing Slip for Order #${orderNum} downloaded`);
+  } catch (err: any) {
+    toast.error(err?.message || "Failed to download packing slip");
+  }
+}
+
 function generateOrderShippingPlainText(order: Order): string {
   const lines: string[] = [];
+  const orderNum = displayOrderNumber(order);
   const name = (order.address?.name || "").trim() || "Customer";
-  lines.push(name);
-
-  if (order.address?.line1?.trim()) {
-    lines.push(order.address.line1.trim());
-  }
-  if (order.address?.line2?.trim()) {
-    lines.push(order.address.line2.trim());
-  }
-  if (order.address?.postOffice?.trim()) {
-    lines.push(order.address.postOffice.trim());
-  }
-
-  const city = (order.address?.city || "").trim();
-  const pincode = (order.address?.pincode || "").trim();
-  if (city && pincode) {
-    lines.push(`${city} - ${pincode}`);
-  } else if (city) {
-    lines.push(city);
-  } else if (pincode) {
-    lines.push(pincode);
-  }
-
-  if (order.address?.state?.trim()) {
-    lines.push(order.address.state.trim());
-  }
-
   const phone = (order.address?.phone || "").trim();
-  if (phone) {
-    lines.push(`Phone: ${phone}`);
-  }
-
   const altPhone = (order.address?.alternatePhone || order.alternatePhone || "").trim();
-  if (altPhone && altPhone !== phone) {
-    lines.push(`Alt No.: ${altPhone}`);
+  const email = (order.customerEmail || "").trim();
+
+  lines.push(`========================================`);
+  lines.push(`SHRI RADHA GOVIND STORE — DELIVERY DETAILS`);
+  lines.push(`Order #${orderNum} | Status: ${order.status || "Placed"}`);
+  lines.push(`========================================`);
+  lines.push(`Customer: ${name}`);
+  if (phone) lines.push(`Primary Phone: ${phone}`);
+  if (altPhone && altPhone !== phone) lines.push(`Alternate Phone: ${altPhone}`);
+  if (email) lines.push(`Email: ${email}`);
+
+  lines.push(``);
+  lines.push(`Shipping Address:`);
+  if (order.address?.line1?.trim()) lines.push(`House / Street: ${order.address.line1.trim()}`);
+  if (order.address?.line2?.trim()) lines.push(`Landmark / Area: ${order.address.line2.trim()}`);
+  if (order.address?.postOffice?.trim()) lines.push(`Post Office: ${order.address.postOffice.trim()}`);
+  const city = (order.address?.city || "").trim();
+  const state = (order.address?.state || "").trim();
+  const pincode = (order.address?.pincode || "").trim();
+  lines.push(`City / State: ${[city, state].filter(Boolean).join(", ")}`);
+  if (pincode) lines.push(`Pincode: ${pincode}`);
+
+  const instructions = (order.address?.line2 || "").trim();
+  if (instructions) {
+    lines.push(`Delivery Instructions: ${instructions}`);
   }
 
-  const num = displayOrderNumber(order);
-  lines.push(`Order No. #${num}`);
+  const isCod = order.payment?.method === "cod";
+  lines.push(``);
+  lines.push(`Payment: ${isCod ? `Cash on Delivery (COD) — COLLECT ₹${order.total}` : `Prepaid Online (₹${order.total}) — DO NOT COLLECT CASH`}`);
+  if (order.courier) {
+    lines.push(`Courier: ${order.courier}${order.trackingId ? ` (AWB: ${order.trackingId})` : ""}`);
+  }
+
+  if (order.items && order.items.length > 0) {
+    lines.push(``);
+    lines.push(`Ordered Products (${order.items.length}):`);
+    let totalQty = 0;
+    order.items.forEach((it, idx) => {
+      const q = it.qty || 1;
+      totalQty += q;
+      const itemName = it.product?.name || it.name || "Product";
+      lines.push(`  ${idx + 1}. ${itemName} x ${q}`);
+    });
+    lines.push(`Total Units to Pack: ${totalQty}`);
+  }
+  lines.push(`========================================`);
 
   return lines.join("\n");
 }
@@ -375,6 +413,9 @@ function WhatsAppCustomerButton({
 
 function AdminRoot() {
   const {
+    user,
+    isSuperAdmin,
+    isShopManager,
     adminAuthed,
     adminLogin,
     adminLogout,
@@ -413,11 +454,137 @@ function AdminRoot() {
   const [orderSearch, setOrderSearch] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>("all");
   const [fulfillingInvoiceOrder, setFulfillingInvoiceOrder] = useState<Order | null>(null);
+  const isManager = isShopManager || user?.role === "shop_manager";
+  const ALLOWED_MANAGER_TABS: Tab[] = [
+    "dash",
+    "products",
+    "inventory",
+    "categories",
+    "orders",
+    "delivery",
+  ];
+
+  useEffect(() => {
+    if (isManager && !ALLOWED_MANAGER_TABS.includes(tab)) {
+      setTab("dash");
+    }
+  }, [isManager, tab]);
+
+  const [managers, setManagers] = useState<{
+    id: string;
+    name: string;
+    email: string;
+    phone?: string;
+    role: string;
+    isBlocked: boolean;
+    createdAt: string;
+  }[]>([]);
+  const [loadingManagers, setLoadingManagers] = useState(false);
+  const [showAddManagerModal, setShowAddManagerModal] = useState(false);
+  const [newManagerName, setNewManagerName] = useState("");
+  const [newManagerEmail, setNewManagerEmail] = useState("");
+  const [newManagerPassword, setNewManagerPassword] = useState("");
+  const [newManagerPhone, setNewManagerPhone] = useState("");
+  const [savingManager, setSavingManager] = useState(false);
+  const [resetPwManager, setResetPwManager] = useState<any>(null);
+  const [newPw, setNewPw] = useState("");
+  const [savingPw, setSavingPw] = useState(false);
+
+  const fetchManagers = async () => {
+    if (!isApiEnabled() || isManager) return;
+    setLoadingManagers(true);
+    try {
+      const res = await api<{ managers: any[] }>("/admin/managers");
+      if (Array.isArray(res?.managers)) setManagers(res.managers);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingManagers(false);
+    }
+  };
+
+  const handleCreateManager = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newManagerName.trim() || !newManagerEmail.trim() || !newManagerPassword.trim()) {
+      toast.error("Please fill name, email and password.");
+      return;
+    }
+    setSavingManager(true);
+    try {
+      await api("/admin/managers", {
+        method: "POST",
+        body: {
+          name: newManagerName.trim(),
+          email: newManagerEmail.trim(),
+          password: newManagerPassword.trim(),
+          phone: newManagerPhone.trim(),
+        },
+      });
+      toast.success("Shop Manager account created successfully.");
+      setShowAddManagerModal(false);
+      setNewManagerName("");
+      setNewManagerEmail("");
+      setNewManagerPassword("");
+      setNewManagerPhone("");
+      fetchManagers();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create Shop Manager");
+    } finally {
+      setSavingManager(false);
+    }
+  };
+
+  const handleToggleManagerStatus = async (id: string, isBlocked: boolean) => {
+    try {
+      await api(`/admin/managers/${id}/status`, {
+        method: "PATCH",
+        body: { isBlocked },
+      });
+      toast.success(isBlocked ? "Shop Manager deactivated" : "Shop Manager activated");
+      fetchManagers();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update manager status");
+    }
+  };
+
+  const handleResetManagerPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetPwManager || newPw.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    setSavingPw(true);
+    try {
+      await api(`/admin/managers/${resetPwManager.id}/password`, {
+        method: "PATCH",
+        body: { password: newPw },
+      });
+      toast.success("Password reset successfully.");
+      setResetPwManager(null);
+      setNewPw("");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to reset password");
+    } finally {
+      setSavingPw(false);
+    }
+  };
+
+  const handleDeleteManager = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to permanently delete Shop Manager ${name}?`)) return;
+    try {
+      await api(`/admin/managers/${id}`, { method: "DELETE" });
+      toast.success("Shop Manager deleted.");
+      fetchManagers();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to delete Shop Manager");
+    }
+  };
+
 
   useEffect(() => {
     if (adminAuthed) {
       fetchProductsSafely();
-      if (tab === "users") fetchRegisteredUsers();
+      if (tab === "users") { fetchRegisteredUsers(); fetchManagers(); }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminAuthed, tab]);
@@ -531,13 +698,40 @@ function AdminRoot() {
             className="h-10 w-10 rounded-full object-cover ring-1 ring-stone-200"
           />
           <div>
-            <span className="block font-serif text-base font-bold text-stone-900 leading-tight">Admin Console</span>
-            <span className="text-[10px] uppercase font-semibold tracking-wider text-stone-400">
-              Shri Radha Govind
-            </span>
+            <span className="block font-serif text-base font-bold text-stone-900 leading-tight">{isManager ? "Shop Manager" : "Admin Console"}</span>
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-teal-800">{isManager ? "Store Operations" : "Shri Radha Govind"}</span>
           </div>
         </div>
         <nav className="flex gap-1 overflow-x-auto pb-2 md:block md:space-y-4 md:overflow-visible md:pb-0 md:flex-1">
+        {isManager ? (
+          <div>
+            <span className="hidden md:block px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-400">
+              OPERATIONS
+            </span>
+            <div className="flex md:block space-x-1 md:space-x-0 md:space-y-1">
+              <NavBtn active={tab === "dash"} onClick={() => setTab("dash")} icon={LayoutDashboard}>
+                Dashboard
+              </NavBtn>
+              <NavBtn active={tab === "products"} onClick={() => setTab("products")} icon={Package}>
+                Products
+              </NavBtn>
+              <NavBtn active={tab === "inventory"} onClick={() => setTab("inventory")} icon={Boxes}>
+                Inventory
+              </NavBtn>
+              <NavBtn active={tab === "categories"} onClick={() => setTab("categories")} icon={Tag}>
+                Categories
+              </NavBtn>
+              <NavBtn active={tab === "orders"} onClick={() => setTab("orders")} icon={ShoppingCart}>
+                Orders
+              </NavBtn>
+              <NavBtn active={tab === "delivery"} onClick={() => setTab("delivery")} icon={Truck}>
+                Delivery Operations
+              </NavBtn>
+            </div>
+          </div>
+        ) : (
+          <>
+
           <div>
             <span className="hidden md:block px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-400">
               STORE
@@ -571,7 +765,7 @@ function AdminRoot() {
                 Delivery Operations
               </NavBtn>
               <NavBtn active={tab === "users"} onClick={() => setTab("users")} icon={Users}>
-                Customers
+                Customers & Staff
               </NavBtn>
               <NavBtn active={tab === "retention"} onClick={() => setTab("retention")} icon={Award}>
                 Retention & Loyalty
@@ -624,7 +818,10 @@ function AdminRoot() {
               </NavBtn>
             </div>
           </div>
-        </nav>
+
+          </>
+        )}
+</nav>
         <div className="mt-3 flex items-center gap-4 border-t border-stone-200 pt-3 md:block">
           <button
             onClick={adminLogout}
@@ -643,6 +840,15 @@ function AdminRoot() {
 
       <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10 overflow-x-hidden">
         {tab === "dash" && (
+          isManager ? (
+            <ShopManagerDashboard
+              orders={orders}
+              products={adminProducts}
+              onNavigateTab={(t) => setTab(t)}
+              onOpenOrder={(o) => setEditingOrder(o)}
+            />
+          ) : (
+
           <div>
             <section className="rounded-xl bg-white border border-stone-200 p-6 text-stone-900 shadow-xs">
               <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-stone-400">
@@ -714,11 +920,12 @@ function AdminRoot() {
               )}
             </div>
           </div>
-        )}
-
-        {tab === "categories" && (
+        )
+      )}
+{tab === "categories" && (
           <CategoryManager
             categories={categoryDetails}
+            canDelete={!isManager}
             tree={adminCategoryTree}
             products={adminProducts}
             onSave={saveCategory}
@@ -740,6 +947,8 @@ function AdminRoot() {
                 <Plus className="h-4 w-4" /> Add Product
               </button>
             </div>
+
+
             <div className="mt-6 bg-white rounded-lg border border-border premium-shadow overflow-x-auto">
               <table className="w-full min-w-[680px] text-sm">
                 <thead className="text-left text-muted-foreground text-xs uppercase tracking-wider bg-muted/40">
@@ -747,7 +956,7 @@ function AdminRoot() {
                     <th className="p-4">Product</th>
                     <th>Category</th>
                     <th>Selling Price</th>
-                    <th>Cost Price</th>
+                    {!isManager && <th>Cost Price</th>}
                     <th>HSN / GST</th>
                     <th>Stock</th>
                     <th></th>
@@ -762,9 +971,11 @@ function AdminRoot() {
                       </td>
                       <td>{pr.category}</td>
                       <td className="font-medium text-stone-900">{formatINR(pr.price)}</td>
+                      {!isManager && (
                       <td className="text-xs text-stone-600 font-mono">
                         {pr.costPrice ? formatINR(pr.costPrice) : "₹0"}
                       </td>
+                    )}
                       <td className="text-xs">
                         <div className="flex items-center gap-1.5 font-mono">
                           <span className="text-muted-foreground font-medium">
@@ -785,6 +996,7 @@ function AdminRoot() {
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
+                          {!isManager && (
                           <button
                             onClick={() => {
                               if (confirm("Delete this product?")) deleteProduct(pr.id);
@@ -794,6 +1006,7 @@ function AdminRoot() {
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
+                        )}
                         </div>
                       </td>
                     </tr>
@@ -812,6 +1025,7 @@ function AdminRoot() {
             {editing && (
               <ProductEditor
                 product={editing}
+                canViewCost={!isManager}
                 tree={adminCategoryTree}
                 categories={categories}
                 onClose={() => setEditing(null)}
@@ -1113,16 +1327,25 @@ function AdminRoot() {
                               try {
                                 const txt = generateOrderShippingPlainText(o);
                                 navigator.clipboard.writeText(txt);
-                                toast.success(`Order #${displayOrderNumber(o)} shipping details copied`);
+                                toast.success(`Order #${displayOrderNumber(o)} delivery details copied`);
                               } catch {
-                                toast.error("Failed to copy order details");
+                                toast.error("Failed to copy delivery details");
                               }
                             }}
                             className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm"
-                            title="Copy minimal shipping address & order label to clipboard"
+                            title="Copy complete delivery address & order details to clipboard"
                           >
                             <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>Copy Order Details</span>
+                            <span>Copy Details</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadOrderPackingSlipPdf(o)}
+                            className="h-9 px-3 rounded-lg border border-border bg-white text-xs font-semibold hover:bg-stone-50 text-stone-700 transition inline-flex items-center gap-1.5 shadow-xs"
+                            title="Download Printable Packing Slip PDF"
+                          >
+                            <FileText className="h-3.5 w-3.5 text-stone-600" />
+                            <span>Packing Slip</span>
                           </button>
                           <button
                             type="button"
@@ -1267,22 +1490,277 @@ function AdminRoot() {
         )}
 
         {tab === "users" && (
-          <div>
+          <div className="space-y-8">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <h1 className="font-display text-3xl">Users</h1>
+                <h1 className="font-display text-3xl">Customers & Staff</h1>
                 <p className="text-sm text-muted-foreground">
-                  All registered accounts. Activate or block them and view full profile details.
+                  All registered customer accounts and authorized store operations staff.
                 </p>
               </div>
               <button
-                onClick={() => fetchRegisteredUsers()}
+                onClick={() => {
+                  fetchRegisteredUsers();
+                  fetchManagers();
+                }}
                 className="h-10 px-4 rounded-full border text-sm inline-flex items-center gap-2 hover:border-primary"
               >
                 <RefreshCw className="h-4 w-4" /> Refresh
               </button>
             </div>
-            <div className="grid sm:grid-cols-3 gap-4 mt-6">
+
+            {/* Shop Managers Section (Super Admin Exclusive) */}
+            <div className="rounded-xl border border-stone-200 bg-white p-6 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-4 border-b border-stone-200 pb-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-bold uppercase tracking-wider">
+                      Staff Access
+                    </span>
+                    <span className="text-xs text-stone-500 font-medium">Role-Based Access Control</span>
+                  </div>
+                  <h2 className="font-serif text-2xl font-bold text-stone-900 mt-1">
+                    Shop Managers & Operations Staff
+                  </h2>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Authorized staff members who manage products, adjust inventory counts, pack orders, and handle courier dispatches.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddManagerModal(true)}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal-700 px-3.5 text-xs font-semibold text-white hover:bg-teal-800 transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add Shop Manager</span>
+                </button>
+              </div>
+
+              {loadingManagers ? (
+                <div className="py-8 text-center text-xs text-stone-500">Loading managers...</div>
+              ) : managers.length === 0 ? (
+                <div className="py-8 text-center text-xs text-stone-500">
+                  No Shop Managers configured yet. Click "Add Shop Manager" above to grant operations access.
+                </div>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-stone-50 border-b text-stone-500 uppercase tracking-wider font-semibold">
+                      <tr>
+                        <th className="p-3">Manager Name</th>
+                        <th className="p-3">Email Address</th>
+                        <th className="p-3">Phone</th>
+                        <th className="p-3">Created</th>
+                        <th className="p-3">Status</th>
+                        <th className="p-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {managers.map((m) => (
+                        <tr key={m.id} className="hover:bg-stone-50/50">
+                          <td className="p-3 font-semibold text-stone-900">{m.name}</td>
+                          <td className="p-3 text-stone-600 font-mono">{m.email}</td>
+                          <td className="p-3 text-stone-600 font-mono">{m.phone || "-"}</td>
+                          <td className="p-3 text-stone-500">{new Date(m.createdAt).toLocaleDateString("en-IN")}</td>
+                          <td className="p-3">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                m.isBlocked
+                                  ? "bg-rose-100 text-rose-800"
+                                  : "bg-emerald-100 text-emerald-800"
+                              }`}
+                            >
+                              {m.isBlocked ? "Disabled" : "Active"}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right space-x-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setResetPwManager(m);
+                                setNewPw("");
+                              }}
+                              className="px-2 py-1 rounded border border-stone-200 text-stone-700 hover:bg-stone-50 font-medium cursor-pointer"
+                            >
+                              Reset Password
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleManagerStatus(m.id, !m.isBlocked)}
+                              className={`px-2 py-1 rounded font-medium cursor-pointer ${
+                                m.isBlocked
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
+                                  : "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                              }`}
+                            >
+                              {m.isBlocked ? "Reactivate" : "Deactivate"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteManager(m.id, m.name)}
+                              className="px-2 py-1 rounded bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-medium cursor-pointer"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal: Add Shop Manager */}
+            {showAddManagerModal && (
+              <div
+                className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+                onClick={() => setShowAddManagerModal(false)}
+              >
+                <div
+                  className="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between border-b pb-3">
+                    <h3 className="font-serif text-lg font-bold text-stone-900">Add New Shop Manager</h3>
+                    <button
+                      onClick={() => setShowAddManagerModal(false)}
+                      className="text-stone-400 hover:text-stone-600 cursor-pointer"
+                    >
+                      <XIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleCreateManager} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        required
+                        value={newManagerName}
+                        onChange={(e) => setNewManagerName(e.target.value)}
+                        placeholder="e.g. Govind"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-teal-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1">Email Address</label>
+                      <input
+                        type="email"
+                        required
+                        value={newManagerEmail}
+                        onChange={(e) => setNewManagerEmail(e.target.value)}
+                        placeholder="e.g. govind@shriradhagovindstore.com"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-teal-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1">Initial Password (min 6 chars)</label>
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        value={newManagerPassword}
+                        onChange={(e) => setNewManagerPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-teal-700"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1">Phone Number (Optional)</label>
+                      <input
+                        type="tel"
+                        value={newManagerPhone}
+                        onChange={(e) => setNewManagerPhone(e.target.value)}
+                        placeholder="e.g. +91 9876543210"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-teal-700"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2 border-t">
+                      <button
+                        type="button"
+                        onClick={() => setShowAddManagerModal(false)}
+                        className="px-4 py-2 border rounded-lg text-xs font-semibold text-stone-600 hover:bg-stone-50 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingManager}
+                        className="px-4 py-2 rounded-lg bg-teal-700 text-white text-xs font-semibold hover:bg-teal-800 disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingManager ? "Creating..." : "Create Account"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Modal: Reset Manager Password */}
+            {resetPwManager && (
+              <div
+                className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+                onClick={() => setResetPwManager(null)}
+              >
+                <div
+                  className="bg-white rounded-xl max-w-sm w-full p-6 shadow-xl space-y-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex items-center justify-between border-b pb-3">
+                    <h3 className="font-serif text-lg font-bold text-stone-900">Reset Manager Password</h3>
+                    <button
+                      onClick={() => setResetPwManager(null)}
+                      className="text-stone-400 hover:text-stone-600 cursor-pointer"
+                    >
+                      <XIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleResetManagerPassword} className="space-y-3">
+                    <p className="text-xs text-stone-600">
+                      Set a new password for <span className="font-semibold">{resetPwManager.name}</span> ({resetPwManager.email}).
+                    </p>
+                    <div>
+                      <label className="block text-xs font-semibold text-stone-700 mb-1">New Password (min 6 chars)</label>
+                      <input
+                        type="password"
+                        required
+                        minLength={6}
+                        value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:border-teal-700"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2 pt-2 border-t">
+                      <button
+                        type="button"
+                        onClick={() => setResetPwManager(null)}
+                        className="px-4 py-2 border rounded-lg text-xs font-semibold text-stone-600 hover:bg-stone-50 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={savingPw}
+                        className="px-4 py-2 rounded-lg bg-teal-700 text-white text-xs font-semibold hover:bg-teal-800 disabled:opacity-50 cursor-pointer"
+                      >
+                        {savingPw ? "Saving..." : "Update Password"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Customer Accounts Section */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h2 className="font-serif text-2xl font-bold text-stone-900">Registered Customer Accounts</h2>
+                  <p className="text-xs text-stone-500">View customer orders, total spend, and toggle account access.</p>
+                </div>
+              </div>
+              <div className="grid sm:grid-cols-3 gap-4">
               <Stat icon={Users} label="Total Users" value={String(registeredUsers.length)} />
               <Stat
                 icon={ShieldCheck}
@@ -1391,6 +1869,7 @@ function AdminRoot() {
                 onToggleBlock={(b) => toggleUserBlock(viewUser.id, b)}
               />
             )}
+            </div>
           </div>
         )}
 
@@ -1412,6 +1891,7 @@ function AdminRoot() {
         {editingOrder && (
           <OrderManager
             order={editingOrder}
+            isManager={isManager}
             fetchEvents={fetchOrderEvents}
             onClose={() => setEditingOrder(null)}
             onSave={(patch) => {
@@ -2349,8 +2829,10 @@ function ProductEditor({
   categories,
   onClose,
   onSave,
+  canViewCost,
 }: {
   product: Product;
+  canViewCost?: boolean;
   tree: (Category & { children?: Category[] })[];
   categories: string[];
   onClose: () => void;
@@ -2631,12 +3113,14 @@ function ProductEditor({
                 value={String(p.mrp ?? 0)}
                 onChange={(v) => setP({ ...p, mrp: +v })}
               />
-              <In
+              {canViewCost !== false && (
+                <In
                 label="Cost Price (₹) [Admin Only]"
                 type="number"
                 value={String((p as any).costPrice ?? 0)}
                 onChange={(v) => setP({ ...p, costPrice: +v } as any)}
               />
+              )}
               {product?.id ? (
                 <div>
                   <label className="text-xs font-semibold uppercase text-stone-500 tracking-wider">
@@ -4147,6 +4631,7 @@ function SendInvoiceDialog({
 
 function OrderManager({
   order: initialOrder,
+  isManager,
   fetchEvents,
   onClose,
   onSave,
@@ -4154,6 +4639,7 @@ function OrderManager({
   onRefundSuccess,
 }: {
   order: Order;
+  isManager?: boolean;
   fetchEvents?: (id: string) => Promise<{ events: CourierEvent[]; order: Order } | null>;
   onClose: () => void;
   onSave: (patch: {
@@ -4224,6 +4710,19 @@ function OrderManager({
     "Delivered",
     "Cancelled",
   ];
+
+
+  const ALLOWED_MANAGER_TRANSITIONS: Record<Order["status"], Order["status"][]> = {
+    Placed: ["Confirmed"],
+    Confirmed: ["Processing"],
+    Processing: ["Packed"],
+    Packed: ["Shipped"],
+    Hold: [],
+    Shipped: [],
+    "Out for delivery": [],
+    Delivered: [],
+    Cancelled: [],
+  };
 
   const ALLOWED_ADMIN_TRANSITIONS: Record<Order["status"], Order["status"][]> = {
     Placed: ["Confirmed", "Cancelled"],
@@ -4299,6 +4798,14 @@ function OrderManager({
   };
 
   const submit = () => {
+    if (isManager && status === "Shipped") {
+      const effCourier = courier || order.courier;
+      const effTracking = (trackingId || "").trim() || (order.trackingId || "").trim();
+      if (!effCourier || !effTracking) {
+        toast.error("Courier partner and Tracking ID (AWB) are required to mark Shipped.");
+        return;
+      }
+    }
     if (status === "Hold" && !holdReason.trim()) {
       setShowHoldModal(true);
       setHoldReasonError("A hold reason is mandatory when placing an order on hold.");
@@ -4315,7 +4822,7 @@ function OrderManager({
     onSave(patch);
   };
 
-  const allowedNextStatuses = ALLOWED_ADMIN_TRANSITIONS[order.status] || [];
+  const allowedNextStatuses = isManager ? (ALLOWED_MANAGER_TRANSITIONS[order.status] || []) : (ALLOWED_ADMIN_TRANSITIONS[order.status] || []);
 
   // ----- timeline derived from current status + timestamps -----
   const TIMELINE: Order["status"][] = [
@@ -4444,17 +4951,43 @@ function OrderManager({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <WhatsAppCustomerButton order={order} template={settings.whatsappTemplate} variant="sm" />
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  const txt = generateOrderShippingPlainText(order);
+                  navigator.clipboard.writeText(txt);
+                  toast.success(`Order #${displayOrderNumber(order)} delivery details copied`);
+                } catch {
+                  toast.error("Failed to copy delivery details");
+                }
+              }}
+              className="h-9 px-3 rounded-lg border border-teal-300 bg-teal-50 text-xs font-semibold hover:bg-teal-100 text-teal-850 transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Copy complete delivery address & order details to clipboard"
+            >
+              <Copy className="h-3.5 w-3.5 text-teal-700" />
+              <span>Copy Delivery Details</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => downloadOrderPackingSlipPdf(order)}
+              className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title="Download Printable Packing Slip & Dispatch Manifest"
+            >
+              <FileText className="h-3.5 w-3.5 text-teal-700" />
+              <span>Packing Slip (PDF)</span>
+            </button>
             <button
               type="button"
               onClick={() => downloadOrderInvoicePdf(order)}
-              className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm"
+              className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
               title="Download Tax Invoice PDF"
             >
               <Download className="h-3.5 w-3.5 text-primary" />
               <span>Download Invoice (PDF)</span>
             </button>
+            <WhatsAppCustomerButton order={order} template={settings.whatsappTemplate} variant="sm" />
 
             {fetchEvents && (
               <div
@@ -4617,26 +5150,52 @@ function OrderManager({
                   try {
                     const txt = generateOrderShippingPlainText(order);
                     navigator.clipboard.writeText(txt);
-                    toast.success(`Order #${displayOrderNumber(order)} shipping details copied`);
+                    toast.success(`Order #${displayOrderNumber(order)} delivery details copied`);
                   } catch {
-                    toast.error("Failed to copy address");
+                    toast.error("Failed to copy delivery details");
                   }
                 }}
-                className="text-[11px] font-semibold text-primary hover:underline inline-flex items-center gap-1"
-                title="Copy minimal shipping address label"
+                className="text-[11px] font-semibold text-teal-700 hover:text-teal-850 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                title="Copy complete operational delivery details"
               >
                 <Copy className="h-3 w-3" />
-                <span>Copy</span>
+                <span>Copy Delivery Details</span>
               </button>
             </div>
-            <div className="space-y-1 leading-relaxed text-foreground">
-              {order.address?.line1 && <div>{order.address.line1}</div>}
-              {order.address?.line2 && <div className="text-muted-foreground">{order.address.line2}</div>}
-              {order.address?.postOffice && <div>Post Office (PO): {order.address.postOffice}</div>}
-              <div className="font-semibold pt-0.5">
-                {[order.address?.city, order.address?.state].filter(Boolean).join(", ")}
-                {order.address?.pincode ? ` - ${order.address.pincode}` : ""}
+            <div className="space-y-1.5 leading-relaxed text-foreground">
+              {order.address?.line1 && (
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">House / Street (Line 1):</span>
+                  <div className="font-medium text-stone-900">{order.address.line1}</div>
+                </div>
+              )}
+              {order.address?.line2 && (
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">Landmark / Area (Line 2):</span>
+                  <div className="text-stone-800">{order.address.line2}</div>
+                </div>
+              )}
+              {order.address?.postOffice && (
+                <div className="text-muted-foreground text-xs">
+                  <span className="font-semibold text-stone-700">Post Office (PO): </span>
+                  {order.address.postOffice}
+                </div>
+              )}
+              <div className="pt-0.5">
+                <span className="text-[10px] uppercase font-bold text-muted-foreground block">City, State & Pincode:</span>
+                <div className="font-semibold text-stone-900">
+                  {[order.address?.city, order.address?.state].filter(Boolean).join(", ")}
+                  {order.address?.pincode ? ` - ${order.address.pincode}` : ""}
+                </div>
               </div>
+              {(order.address?.line2 || (order as any).deliveryInstructions) && (
+                <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-300/40 text-[11px] text-amber-900">
+                  <span className="font-bold block text-[10px] uppercase tracking-wider text-amber-800">
+                    Delivery Instructions / Landmark:
+                  </span>
+                  <span>{order.address?.line2 || (order as any).deliveryInstructions}</span>
+                </div>
+              )}
             </div>
             {(order.businessName || order.gstin) && (
               <div className="pt-2 border-t border-border/60 text-[11px] space-y-1">
@@ -4795,13 +5354,13 @@ function OrderManager({
                   {order.payment?.status || "pending"}
                 </span>
               </div>
-              {order.payment?.razorpayOrderId && (
+              {!isManager && order.payment?.razorpayOrderId && (
                 <div className="flex justify-between text-[11px]">
                   <span className="text-muted-foreground">Razorpay Order ID:</span>
                   <span className="font-mono text-foreground">{order.payment.razorpayOrderId}</span>
                 </div>
               )}
-              {order.payment?.razorpayPaymentId && (
+              {!isManager && order.payment?.razorpayPaymentId && (
                 <div className="flex justify-between text-[11px]">
                   <span className="text-muted-foreground">Razorpay Payment ID:</span>
                   <span className="font-mono font-semibold text-foreground">{order.payment.razorpayPaymentId}</span>
@@ -4815,7 +5374,7 @@ function OrderManager({
               )}
 
               {/* Manual UPI Refund Section for Cancelled Online Orders */}
-              {isRefundPending(order) && (
+              {!isManager && isRefundPending(order) && (
                 <div className="mt-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/80 space-y-2">
                   <div className="flex items-center gap-1.5 text-amber-950 font-bold text-xs">
                     <Clock className="h-4 w-4 text-amber-700 shrink-0" />
@@ -4836,7 +5395,7 @@ function OrderManager({
                 </div>
               )}
 
-              {isOrderRefunded(order) && (
+              {!isManager && isOrderRefunded(order) && (
                 <div className="mt-3 p-3.5 rounded-xl border border-emerald-300 bg-emerald-50/80 space-y-1.5 text-xs">
                   <div className="flex items-center gap-1.5 text-emerald-950 font-bold">
                     <CheckCircle2 className="h-4 w-4 text-emerald-700 shrink-0" />
@@ -4879,7 +5438,57 @@ function OrderManager({
             </div>
           </div>
 
-          {/* Order Financials & Net Profit (Admin Internal) */}
+
+          {isManager ? (
+            <div className="rounded-xl border border-teal-200 bg-white p-4 space-y-3 shadow-xs">
+              <div className="flex items-center justify-between border-b border-teal-100 pb-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-teal-800 flex items-center gap-1.5">
+                  <Package className="h-3.5 w-3.5 text-teal-700" /> Operational Summary
+                </p>
+                <span className="text-[10px] uppercase font-bold text-teal-800 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded">
+                  Fulfillment
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Order Items:</span>
+                  <span className="font-semibold text-stone-900">{enrichedItems.length} products</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Total Units to Pack:</span>
+                  <span className="font-bold text-stone-900 font-mono">
+                    {enrichedItems.reduce((acc, i) => acc + i.qty, 0)} units
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-stone-500">Payment Method:</span>
+                  <span className="font-semibold text-stone-900">
+                    {order.payment?.method === "cod" ? "Cash on Delivery (COD)" : "Online Prepaid"}
+                  </span>
+                </div>
+                {order.payment?.method === "cod" ? (
+                  <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-950">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                      Cash to Collect on Delivery
+                    </span>
+                    <span className="text-base font-bold font-mono text-amber-950">
+                      Collect {formatINR(order.total)}
+                    </span>
+                    <span className="block text-[11px] text-amber-800 mt-0.5">
+                      Ensure this exact amount is stated on the courier waybill.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                      Prepaid Online Order
+                    </span>
+                    <span className="text-xs font-semibold">Do NOT collect cash on delivery</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
           <div className="rounded-xl border border-stone-200 bg-white p-4 space-y-2.5 shadow-xs">
             <div className="flex items-center justify-between border-b border-stone-200/80 pb-1.5">
               <p className="text-[11px] font-bold uppercase tracking-wider text-stone-700 flex items-center gap-1.5">
@@ -5013,6 +5622,7 @@ function OrderManager({
               );
             })()}
           </div>
+        )}
         </div>
 
         {/* ---- Shipment & Tracking Management ---- */}
@@ -5099,7 +5709,7 @@ function OrderManager({
                 onChange={(e) => handleStatusSelect(e.target.value as Order["status"])}
                 className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-sm font-semibold focus:outline-none focus:border-primary"
               >
-                {STATUSES.map((s) => (
+                {(isManager ? [status, ...allowedNextStatuses] : STATUSES).map((s) => (
                   <option key={s} value={s}>
                     {s}
                   </option>
@@ -5679,8 +6289,10 @@ function CategoryManager({
   onSave,
   onDelete,
   onReorder,
+  canDelete = true,
 }: {
   categories: Category[];
+  canDelete?: boolean;
   tree: (Category & { children: Category[] })[];
   products: Product[];
   onSave: (category: Partial<Category> & { name: string; id?: string }) => Promise<void> | void;
@@ -5785,6 +6397,7 @@ function CategoryManager({
               onAddSubcategory={() => handleAddSubcategory(parent.id)}
               onDragStart={setDragging}
               onDrop={dropBefore}
+              canDelete={canDelete}
             />
             {parent.children.length > 0 && (
               <div className="border-t border-border/70 bg-muted/20 pl-4 sm:pl-10 divide-y divide-border/40">
@@ -5800,6 +6413,7 @@ function CategoryManager({
                     onDragStart={setDragging}
                     onDrop={dropBefore}
                     child
+                    canDelete={canDelete}
                   />
                 ))}
               </div>
@@ -5832,6 +6446,7 @@ function CategoryRow({
   onAddSubcategory,
   onDragStart,
   onDrop,
+  canDelete = true,
 }: {
   category: Category;
   count: number;
@@ -5843,6 +6458,7 @@ function CategoryRow({
   onAddSubcategory?: () => void;
   onDragStart: (category: Category) => void;
   onDrop: (category: Category) => void;
+  canDelete?: boolean;
 }) {
   return (
     <div
@@ -5923,6 +6539,7 @@ function CategoryRow({
         >
           <Pencil className="h-4 w-4" />
         </button>
+        {canDelete !== false && (
         <button
           type="button"
           onClick={() => {
@@ -5934,6 +6551,7 @@ function CategoryRow({
         >
           <Trash2 className="h-4 w-4" />
         </button>
+        )}
       </div>
     </div>
   );

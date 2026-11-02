@@ -362,4 +362,30 @@ r.patch("/me", requireAuth, async (req, res, next) => {
   }
 });
 
+r.post("/change-password", requireAuth, async (req, res, next) => {
+  try {
+    const { currentPassword, newPassword } = z
+      .object({
+        currentPassword: z.string().min(1, "Current password required"),
+        newPassword: z.string().min(6, "New password must be at least 6 characters"),
+      })
+      .parse(req.body);
+
+    const user = await User.findById(req.user!.sub);
+    if (!user) throw new HttpError(404, "User not found");
+    if (!user.passwordHash) throw new HttpError(400, "Password not set for this account");
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) throw new HttpError(400, "Incorrect current password");
+
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
+    user.passwordSet = true;
+    await user.save();
+
+    res.json({ ok: true, message: "Password updated successfully." });
+  } catch (e) {
+    next(e);
+  }
+});
+
 export default r;

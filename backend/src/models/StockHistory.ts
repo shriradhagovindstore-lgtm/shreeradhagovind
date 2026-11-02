@@ -14,7 +14,7 @@ export interface IStockHistory extends Document {
   reason: string;
   note: string;
   actorId?: Types.ObjectId | null;
-  actorType: "customer" | "admin" | "system" | "guest";
+  actorType: "customer" | "admin" | "system" | "guest" | "shop_manager";
   orderId?: Types.ObjectId | null;
   orderNo?: number | null;
   source: string;
@@ -45,7 +45,7 @@ const stockHistorySchema = new Schema<IStockHistory>(
     actorId: { type: Schema.Types.ObjectId, ref: "User", default: null },
     actorType: {
       type: String,
-      enum: ["customer", "admin", "system", "guest"],
+      enum: ["customer", "admin", "system", "guest", "shop_manager"],
       required: true,
       default: "system",
     },

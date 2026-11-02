@@ -4,9 +4,10 @@ import { z } from "zod";
 import { Product } from "../models/Product";
 import { Category } from "../models/Category";
 import { WaitingList } from "../models/WaitingList";
-import { requireAuth, requireAdmin, optionalAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireStaff, optionalAuth } from "../middleware/auth";
 import { HttpError } from "../middleware/error";
 import { manualAdjustStock, OUT_OF_STOCK_WINDOW_MS } from "../services/inventory.service";
+import { logAuditEvent } from "../services/audit.service";
 
 const r = Router();
 
@@ -21,10 +22,11 @@ const slugify = (value: string) =>
 r.get("/", optionalAuth, async (req, res, next) => {
   try {
     const { category, q, sort } = req.query as Record<string, string | undefined>;
-    const isAdmin = req.user?.role === "admin";
+    const isStaff = req.user?.role === "admin" || req.user?.role === "shop_manager";
+    const isSuperAdmin = req.user?.role === "admin";
 
     const filter: any = {};
-    if (!isAdmin) {
+    if (!isStaff) {
       // 24-hour storefront rule:
       // Active products with stock > 0 are visible.
       // Active products with stock <= 0 are visible ONLY if outOfStockSince is within exactly 24 hours.
@@ -60,7 +62,7 @@ r.get("/", optionalAuth, async (req, res, next) => {
     };
 
     const query = Product.find(filter).sort(sortMap[sort ?? "newest"] ?? { createdAt: -1 });
-    if (!isAdmin) {
+    if (!isSuperAdmin) {
       query.select("-costPrice");
     }
     const products = await query;
@@ -74,8 +76,9 @@ r.get("/:idOrSlug", optionalAuth, async (req, res, next) => {
   try {
     const idOrSlug = String(req.params.idOrSlug);
     const looksLikeObjectId = /^[a-f\d]{24}$/i.test(idOrSlug);
-    const isAdmin = req.user?.role === "admin";
-    const selectStr = isAdmin ? "" : "-costPrice";
+    const isStaff = req.user?.role === "admin" || req.user?.role === "shop_manager";
+    const isSuperAdmin = req.user?.role === "admin";
+    const selectStr = isSuperAdmin ? "" : "-costPrice";
 
     let p = looksLikeObjectId
       ? await Product.findById(idOrSlug).select(selectStr)
@@ -89,7 +92,7 @@ r.get("/:idOrSlug", optionalAuth, async (req, res, next) => {
     if (!p) throw new HttpError(404, "Product not found");
 
     // Customer storefront visibility check (24-hour rule)
-    if (!isAdmin) {
+    if (!isStaff) {
       const cutoff = new Date(Date.now() - OUT_OF_STOCK_WINDOW_MS);
       const isStockZeroExpired =
         (p.stock ?? 0) <= 0 && (!p.outOfStockSince || new Date(p.outOfStockSince) <= cutoff);
@@ -196,7 +199,7 @@ const productSchema = z.object({
     .default([]),
 });
 
-r.post("/", requireAuth, requireAdmin, async (req, res, next) => {
+r.post("/", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const data = productSchema.parse(req.body);
     const p = await Product.create({
@@ -204,13 +207,26 @@ r.post("/", requireAuth, requireAdmin, async (req, res, next) => {
       slug: slugify(data.slug || data.name),
       outOfStockSince: (data.stock ?? 100) <= 0 ? new Date() : null,
     });
+
+    const actorRole = req.user?.role === "shop_manager" ? "shop_manager" : "admin";
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole,
+      actorEmail: req.user?.email,
+      action: "product.create",
+      targetType: "product",
+      targetId: String(p._id),
+      targetIdentifier: p.name,
+      metadata: { name: p.name, slug: p.slug, price: p.price, category: p.category, isActive: p.isActive },
+    }).catch(() => {});
+
     res.status(201).json({ product: p });
   } catch (e) {
     next(e);
   }
 });
 
-r.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+r.patch("/:id", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const data = productSchema.partial().parse(req.body);
     const patch: any = { ...data };
@@ -233,6 +249,31 @@ r.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
       runValidators: true,
     });
     if (!p) throw new HttpError(404, "Not found");
+
+    const actorRole = req.user?.role === "shop_manager" ? "shop_manager" : "admin";
+    let action = "product.update";
+    if (patch.isActive !== undefined && patch.isActive !== existing.isActive) {
+      action = patch.isActive ? "product.publish" : "product.unpublish";
+    }
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole,
+      actorEmail: req.user?.email,
+      action,
+      targetType: "product",
+      targetId: String(p._id),
+      targetIdentifier: p.name,
+      metadata: {
+        name: p.name,
+        slug: p.slug,
+        price: p.price,
+        category: p.category,
+        isActive: p.isActive,
+        changedFields: Object.keys(patch),
+      },
+    }).catch(() => {});
+
     res.json({ product: p });
   } catch (e) {
     next(e);
@@ -241,7 +282,19 @@ r.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
 
 r.delete("/:id", requireAuth, requireAdmin, async (req, res, next) => {
   try {
+    const existing = await Product.findById(req.params.id);
     await Product.findByIdAndDelete(req.params.id);
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole: "admin",
+      actorEmail: req.user?.email,
+      action: "product.delete",
+      targetType: "product",
+      targetId: String(req.params.id),
+      targetIdentifier: existing?.name || String(req.params.id),
+    }).catch(() => {});
+
     res.json({ ok: true });
   } catch (e) {
     next(e);

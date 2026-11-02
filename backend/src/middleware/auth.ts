@@ -29,6 +29,15 @@ export const requireAdmin = (req: Request, _res: Response, next: NextFunction) =
   next();
 };
 
+export const requireSuperAdmin = requireAdmin;
+
+export const requireStaff = (req: Request, _res: Response, next: NextFunction) => {
+  if (req.user?.role !== "admin" && req.user?.role !== "shop_manager") {
+    return next(new HttpError(403, "Staff access required"));
+  }
+  next();
+};
+
 export const optionalAuth = (req: Request, _res: Response, next: NextFunction) => {
   const h = req.headers.authorization;
   if (h?.startsWith("Bearer ")) {

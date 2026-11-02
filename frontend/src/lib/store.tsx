@@ -194,7 +194,7 @@ export type User = {
   email: string;
   phone?: string;
   avatar?: string;
-  role?: "user" | "admin";
+  role?: "user" | "admin" | "shop_manager";
   address?: Partial<Address>;
 } | null;
 export type Category = {
@@ -297,7 +297,7 @@ export type RegisteredUser = {
   email: string;
   phone?: string;
   avatar?: string;
-  role: "user" | "admin";
+  role: "user" | "admin" | "shop_manager";
   provider?: "password" | "google";
   isBlocked: boolean;
   address?: { line1?: string; city?: string; state?: string; pincode?: string };
@@ -438,6 +438,8 @@ type Store = {
   placeOrder: (o: Omit<Order, "id" | "createdAt" | "status"> & { redeemPoints?: number }) => Promise<Order> | Order;
   // admin
   adminAuthed: boolean;
+  isSuperAdmin: boolean;
+  isShopManager: boolean;
   adminLogin: (u: string, p: string) => Promise<boolean> | boolean;
   adminLogout: () => void;
   adminProducts: Product[];
@@ -1058,7 +1060,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             })
             .catch(() => {});
           const ord = await api<{ orders: any[] }>(
-            me.user.role === "admin" ? "/admin/orders" : "/orders",
+            (me.user.role === "admin" || me.user.role === "shop_manager") ? "/admin/orders" : "/orders",
           );
           const currentProducts = Array.isArray(prods) && prods.length > 0 ? prods : adminProducts;
           const lookup = new Map(currentProducts.map((p) => [p.id, p]));
@@ -1090,7 +1092,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [settings, isSettingsLoaded]);
 
-  const adminAuthed = !!user && user.role === "admin";
+  const adminAuthed = !!user && (user.role === "admin" || user.role === "shop_manager");
+  const isSuperAdmin = !!user && user.role === "admin";
+  const isShopManager = !!user && user.role === "shop_manager";
 
   const refreshOrders = useCallback(
     async (asAdmin = adminAuthed) => {
@@ -1215,7 +1219,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     syncWishlist(wishlist);
     fetchLoyalty();
     fetchWallet();
-    if (u.role === "admin") {
+    if (u.role === "admin" || u.role === "shop_manager") {
       refreshCategories(true);
     }
     toast.success(`Welcome, ${u.name}!`);
@@ -1364,8 +1368,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           method: "POST",
           body: { email, password: pass },
         });
-        if (r.user.role !== "admin") {
-          toast.error("Not an admin account");
+        if (r.user.role !== "admin" && r.user.role !== "shop_manager") {
+          toast.error("Not an authorized staff account");
           return false;
         }
         finishAuth(r.token, r.user);
@@ -2111,6 +2115,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     orders,
     placeOrder,
     adminAuthed,
+    isSuperAdmin,
+    isShopManager,
     adminLogin,
     adminLogout,
     adminProducts,

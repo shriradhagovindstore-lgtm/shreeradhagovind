@@ -4,7 +4,11 @@ import mongoose from "mongoose";
 import { z } from "zod";
 import { Order } from "../models/Order";
 import { User } from "../models/User";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { Product } from "../models/Product";
+import bcrypt from "bcryptjs";
+import { requireAuth, requireAdmin, requireStaff } from "../middleware/auth";
+import { AuditLog } from "../models/AuditLog";
+import { logAuditEvent } from "../services/audit.service";
 import { HttpError } from "../middleware/error";
 import {
   sendEmail,
@@ -19,7 +23,7 @@ import {
   tpl,
   formatOrderNumber,
 } from "../utils/email";
-import { generateInvoicePDF, type InvoiceData } from "../utils/invoice";
+import { generateInvoicePDF, generatePackingSlipPDF, type InvoiceData } from "../utils/invoice";
 import { getCourierTrackingUrl } from "../utils/courier";
 import {
   syncOrderTracking,
@@ -36,7 +40,75 @@ import {
 } from "../services/loyalty.service";
 
 const r = Router();
-r.use(requireAuth, requireAdmin);
+// Per-route role authorization enforces granular access for Super Admin vs Shop Manager
+export function sanitizeOrderForManager(orderObj: any) {
+  if (!orderObj) return orderObj;
+  const raw = typeof orderObj.toObject === "function" ? orderObj.toObject() : orderObj;
+  const {
+    productCost,
+    packagingCost,
+    razorpayFee,
+    courierCharge,
+    totalExpense,
+    netProfit,
+    isCostAvailable,
+    refund,
+    guestAccessToken,
+    invoiceOneTimeToken,
+    invoiceOneTimeTokenExpiresAt,
+    invoiceOneTimeTokenUsedAt,
+    invoiceLockUntil,
+    cancelledEmailLockUntil,
+    deliveredLockUntil,
+    refundLockUntil,
+    refundEmailSentAt,
+    ...rest
+  } = raw;
+
+  // Safe payment: Keep method and status for operational packing/COD handling, strip payment gateway secrets/IDs
+  const safePayment: any = rest.payment
+    ? {
+        method: rest.payment.method,
+        status: rest.payment.status,
+      }
+    : undefined;
+
+  // Safe items: Keep product name, quantity, price, images, HSN code, GST rate, but strip internal cost price
+  const safeItems = Array.isArray(rest.items)
+    ? rest.items.map((it: any) => {
+        const itemObj = it && typeof it.toObject === "function" ? it.toObject() : it;
+        if (!itemObj) return itemObj;
+        const { costPrice, comboComponents, ...itemRest } = itemObj;
+        const safeComboComponents = Array.isArray(comboComponents)
+          ? comboComponents.map((c: any) => {
+              const compObj = c && typeof c.toObject === "function" ? c.toObject() : c;
+              if (!compObj) return compObj;
+              const { costPrice: cCost, ...cRest } = compObj;
+              return cRest;
+            })
+          : undefined;
+        return {
+          ...itemRest,
+          ...(safeComboComponents ? { comboComponents: safeComboComponents } : {}),
+        };
+      })
+    : rest.items;
+
+  // Safe user if populated: ensure no password, salt, otp or tokens
+  let safeUser = rest.user;
+  if (safeUser && typeof safeUser === "object") {
+    const userObj = typeof safeUser.toObject === "function" ? safeUser.toObject() : safeUser;
+    const { password, otp, otpExpiresAt, resetPasswordToken, resetPasswordExpiresAt, ...uRest } = userObj;
+    safeUser = uRest;
+  }
+
+  return {
+    ...rest,
+    user: safeUser,
+    items: safeItems,
+    payment: safePayment,
+  };
+}
 
 export function isOrderPaidForFinance(order: any): boolean {
   if (!order || order.status === "Cancelled") return false;
@@ -148,11 +220,13 @@ export function computeOrderFinances(order: any, customCourierCharge?: number) {
   }
 }
 
-r.get("/orders", async (_req, res, next) => {
+r.get("/orders", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const orders = await Order.find().sort({ createdAt: -1 }).populate("user", "name email");
+    const isManager = req.user?.role === "shop_manager";
     const enriched = orders.map((o) => {
       const obj = o.toObject();
+      if (isManager) return sanitizeOrderForManager(obj);
       const isPaid = isOrderPaidForFinance(obj);
       const f = computeOrderFinances(obj);
       return {
@@ -173,7 +247,7 @@ r.get("/orders", async (_req, res, next) => {
 });
 
 // Update courier charge and recalculate finances for an order
-r.patch("/orders/:id/courier-charge", async (req, res, next) => {
+r.patch("/orders/:id/courier-charge", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { courierCharge } = z
       .object({
@@ -219,7 +293,7 @@ const ALLOWED_TRANSITIONS: Record<string, string[]> = {
 };
 
 // Legacy: status-only update
-r.patch("/orders/:id/status", async (req, res, next) => {
+r.patch("/orders/:id/status", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const { status, note } = z
       .object({
@@ -239,6 +313,35 @@ r.patch("/orders/:id/status", async (req, res, next) => {
 
     const existing = await Order.findById(req.params.id);
     if (!existing) throw new HttpError(404, "Not found");
+
+    const isManager = req.user?.role === "shop_manager";
+    if (isManager && status !== undefined && status !== existing.status) {
+      if (status === "Cancelled") {
+        throw new HttpError(403, "Shop Manager is not authorized to cancel orders.");
+      }
+      if (status === "Delivered") {
+        throw new HttpError(403, "Shop Manager is not authorized to mark orders delivered.");
+      }
+      if ((status as string) === "Hold" || status === "Out for delivery") {
+        throw new HttpError(403, "Shop Manager is not authorized for this status change.");
+      }
+      const ALLOWED_MANAGER_TRANSITIONS: Record<string, string[]> = {
+        Placed: ["Confirmed"],
+        Confirmed: ["Processing"],
+        Processing: ["Packed"],
+        Packed: ["Shipped"],
+      };
+      const allowedM = ALLOWED_MANAGER_TRANSITIONS[existing.status] || [];
+      if (!allowedM.includes(status)) {
+        throw new HttpError(
+          400,
+          `Invalid status transition for Shop Manager: Cannot change order from "${existing.status}" to "${status}".`
+        );
+      }
+      if (status === "Shipped" && (!existing.courier || !existing.trackingId)) {
+        throw new HttpError(400, "Courier and Tracking ID (AWB) are required to mark an order Shipped.");
+      }
+    }
 
     if (status !== existing.status) {
       const allowed = ALLOWED_TRANSITIONS[existing.status] || [];
@@ -310,13 +413,29 @@ r.patch("/orders/:id/status", async (req, res, next) => {
         sendOrderStatusUpdate(recipientEmail, recipientName, buildEmailOrder(o)).catch(() => {});
       }
     }
-    res.json({ order: o });
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole: isManager ? "shop_manager" : "admin",
+      actorEmail: req.user?.email,
+      action: "order.status_update",
+      targetType: "order",
+      targetId: String(o._id),
+      targetIdentifier: formatOrderNumber(o),
+      metadata: {
+        orderNo: o.orderNo,
+        previousStatus: existing.status,
+        newStatus: status,
+        note,
+      },
+    }).catch(() => {});
+
+    res.json({ order: isManager ? sanitizeOrderForManager(o.toObject()) : o });
   } catch (e) {
     next(e);
   }
 });
 
-r.patch("/orders/:id", async (req, res, next) => {
+r.patch("/orders/:id", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const data = z
       .object({
@@ -354,6 +473,37 @@ r.patch("/orders/:id", async (req, res, next) => {
 
     const existing = await Order.findById(req.params.id);
     if (!existing) throw new HttpError(404, "Not found");
+
+    const isManager = req.user?.role === "shop_manager";
+    if (isManager && data.status !== undefined && data.status !== existing.status) {
+      if (data.status === "Cancelled") {
+        throw new HttpError(403, "Shop Manager is not authorized to cancel orders.");
+      }
+      if (data.status === "Delivered") {
+        throw new HttpError(403, "Shop Manager is not authorized to mark orders delivered.");
+      }
+      if (data.status === "Hold" || data.status === "Out for delivery") {
+        throw new HttpError(403, "Shop Manager is not authorized for this status change.");
+      }
+      const ALLOWED_MANAGER_TRANSITIONS: Record<string, string[]> = {
+        Placed: ["Confirmed"],
+        Confirmed: ["Processing"],
+        Processing: ["Packed"],
+        Packed: ["Shipped"],
+      };
+      const allowedM = ALLOWED_MANAGER_TRANSITIONS[existing.status] || [];
+      if (!allowedM.includes(data.status)) {
+        throw new HttpError(
+          400,
+          `Invalid status transition for Shop Manager: Cannot change order from "${existing.status}" to "${data.status}".`
+        );
+      }
+      const effectiveCourier = data.courier !== undefined ? data.courier : existing.courier;
+      const effectiveTrackingId = data.trackingId !== undefined ? data.trackingId : existing.trackingId;
+      if (data.status === "Shipped" && (!effectiveCourier || !effectiveTrackingId)) {
+        throw new HttpError(400, "Courier and Tracking ID (AWB) are required to mark an order Shipped.");
+      }
+    }
 
     const update: any = {};
 
@@ -485,14 +635,49 @@ r.patch("/orders/:id", async (req, res, next) => {
       isCostAvailable: f.isCostAvailable,
     };
 
-    res.json({ order: enriched });
+    const actorRole = req.user?.role === "shop_manager" ? "shop_manager" : "admin";
+    if (statusChanged) {
+      logAuditEvent({
+        actorId: req.user!.sub,
+        actorRole,
+        actorEmail: req.user?.email,
+        action: "order.status_update",
+        targetType: "order",
+        targetId: String(o._id),
+        targetIdentifier: formatOrderNumber(o),
+        metadata: {
+          orderNo: o.orderNo,
+          previousStatus: existing.status,
+          newStatus: data.status,
+          note: data.note,
+        },
+      }).catch(() => {});
+    }
+    if (trackingChanged || courierChanged) {
+      logAuditEvent({
+        actorId: req.user!.sub,
+        actorRole,
+        actorEmail: req.user?.email,
+        action: "order.courier_update",
+        targetType: "order",
+        targetId: String(o._id),
+        targetIdentifier: formatOrderNumber(o),
+        metadata: {
+          orderNo: o.orderNo,
+          courier: requestedCourier,
+          trackingId: data.trackingId,
+        },
+      }).catch(() => {});
+    }
+
+    res.json({ order: isManager ? sanitizeOrderForManager(enriched) : enriched });
   } catch (e) {
     next(e);
   }
 });
 
 // Manual payment verification endpoint disabled (automated by server and webhooks)
-r.patch("/orders/:id/payment", async (_req, _res, next) => {
+r.patch("/orders/:id/payment", requireAuth, requireAdmin, async (_req, _res, next) => {
   next(
     new HttpError(
       400,
@@ -502,7 +687,7 @@ r.patch("/orders/:id/payment", async (_req, _res, next) => {
 });
 
 // Manual UPI refund recording for cancelled Razorpay-paid orders
-r.post("/orders/:id/refund", async (req, res, next) => {
+r.post("/orders/:id/refund", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const refundSchema = z.object({
       upiReference: z.string({ required_error: "UPI Reference is required" }).min(1, "UPI Reference is required"),
@@ -516,7 +701,7 @@ r.post("/orders/:id/refund", async (req, res, next) => {
     }
     const cleanNotes = (parsed.notes || "").trim().slice(0, 500);
 
-    const orderId = req.params.id;
+    const orderId = String(req.params.id);
     let order = mongoose.Types.ObjectId.isValid(orderId) ? await Order.findById(orderId) : null;
     if (!order && !isNaN(Number(orderId))) {
       order = await Order.findOne({ orderNo: Number(orderId) });
@@ -628,7 +813,7 @@ r.post("/orders/:id/refund", async (req, res, next) => {
   }
 });
 
-r.get("/users", async (_req, res, next) => {
+r.get("/users", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const users = await User.find().select("-passwordHash").sort({ createdAt: -1 }).lean();
     const ids = users.map((u) => u._id);
@@ -699,7 +884,7 @@ r.get("/users", async (_req, res, next) => {
   }
 });
 
-r.patch("/users/:id/status", async (req, res, next) => {
+r.patch("/users/:id/status", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     const { isBlocked } = z.object({ isBlocked: z.boolean() }).parse(req.body);
     const u = await User.findByIdAndUpdate(req.params.id, { isBlocked }, { new: true }).select("-passwordHash");
@@ -711,7 +896,7 @@ r.patch("/users/:id/status", async (req, res, next) => {
 });
 
 // ---- live order fetch + derived courier events (polled by admin) ----
-r.get("/orders/:id", async (req, res, next) => {
+r.get("/orders/:id", requireAuth, requireStaff, async (req, res, next) => {
   try {
     let o = await Order.findById(req.params.id).populate("user", "name email");
     if (!o) throw new HttpError(404, "Not found");
@@ -723,14 +908,15 @@ r.get("/orders/:id", async (req, res, next) => {
       trackingData = synced.tracking;
     }
 
-    res.json({ order: o, tracking: trackingData, events: deriveEvents(o) });
+    const orderObj = req.user?.role === "shop_manager" ? sanitizeOrderForManager(o.toObject()) : o;
+    res.json({ order: orderObj, tracking: trackingData, events: deriveEvents(o) });
   } catch (e) {
     next(e);
   }
 });
 
 // Admin manual tracking refresh (cooldown & budget protected)
-r.post("/orders/:id/refresh-tracking", async (req, res, next) => {
+r.post("/orders/:id/refresh-tracking", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const o = await Order.findById(req.params.id);
     if (!o) throw new HttpError(404, "Order not found");
@@ -742,12 +928,12 @@ r.post("/orders/:id/refresh-tracking", async (req, res, next) => {
 });
 
 // Admin quota & tracking config diagnostics
-r.get("/tracking/quota", async (_req, res) => {
+r.get("/tracking/quota", requireAuth, requireStaff, async (_req, res) => {
   res.json({ quota: getQuotaInfo() });
 });
 
 // Admin trigger sync of all active shipments (distributed lock + cache TTL + quota protected)
-r.post("/tracking/sync", async (_req, res, next) => {
+r.post("/tracking/sync", requireAuth, requireStaff, async (_req, res, next) => {
   try {
     const result = await syncAllActiveShipments();
     const alreadyFresh = Math.max(0, result.totalActive - result.refreshed);
@@ -762,7 +948,7 @@ r.post("/tracking/sync", async (_req, res, next) => {
 });
 
 // Download / Stream Invoice PDF for Admin
-r.get("/orders/:id/invoice", async (req, res, next) => {
+r.get("/orders/:id/invoice", requireAuth, requireStaff, async (req, res, next) => {
   try {
     let o = null;
     if (mongoose.isValidObjectId(req.params.id)) {
@@ -807,6 +993,62 @@ r.get("/orders/:id/invoice", async (req, res, next) => {
     const pdfBuffer = await generateInvoicePDF(invoiceData);
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `inline; filename="Invoice-${orderNum}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (e) {
+    next(e);
+  }
+});
+
+// Download / Stream Packing Slip PDF for Staff (Admin & Shop Manager)
+r.get("/orders/:id/packing-slip", requireAuth, requireStaff, async (req, res, next) => {
+  try {
+    let o = null;
+    if (mongoose.isValidObjectId(req.params.id)) {
+      o = await Order.findById(req.params.id).populate("user", "name email");
+    }
+    if (!o && !isNaN(Number(req.params.id))) {
+      o = await Order.findOne({ orderNo: Number(req.params.id) }).populate("user", "name email");
+    }
+    if (!o) throw new HttpError(404, "Order not found");
+
+    const u: any = o.user;
+    const customerName = o.address?.name || u?.name || "Customer";
+    const customerEmail = o.customerEmail || u?.email || "";
+    const orderNum = formatOrderNumber(o);
+
+    const staffRoleLabel = req.user?.role === "shop_manager" ? "Shop Manager" : "Admin";
+    const staffName = (req.user as any)?.name || (req.user?.role === "shop_manager" ? "Govind Brajwasi" : "Store Administrator");
+    const packedByName = `${staffName} (${staffRoleLabel})`;
+
+    const invoiceData: InvoiceData = {
+      packedByName,
+      orderId: String(o._id),
+      orderNo: o.orderNo ?? orderNum,
+      invoiceNo: `INV-${orderNum}`,
+      trackingId: o.trackingId ?? undefined,
+      courier: o.courier ?? null,
+      status: o.status,
+      customerName,
+      customerEmail,
+      businessName: o.businessName,
+      gstin: o.gstin,
+      needsGstInvoice: o.needsGstInvoice,
+      items: o.items as any,
+      subtotal: o.subtotal,
+      shipping: o.shipping,
+      codFee: o.codFee,
+      total: o.total,
+      address: (o.address || o.billingAddress) as any,
+      payment: {
+        method: o.payment?.method ?? "cod",
+        status: o.payment?.status ?? "pending",
+      },
+      createdAt: o.createdAt,
+    };
+
+    const pdfBuffer = await generatePackingSlipPDF(invoiceData);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="PackingSlip-${orderNum}.pdf"`);
     res.send(pdfBuffer);
   } catch (e) {
     next(e);
@@ -862,7 +1104,7 @@ const sendInvoiceSchema = z.object({
 });
 
 // Admin sends invoice (manual fulfillment with 48h single-use token, email PDF, and WhatsApp link)
-r.post("/orders/:id/send-invoice", async (req, res, next) => {
+r.post("/orders/:id/send-invoice", requireAuth, requireAdmin, async (req, res, next) => {
   try {
     let o = null;
     if (mongoose.isValidObjectId(req.params.id)) {
@@ -1108,7 +1350,7 @@ function deriveEvents(o: any) {
   }));
 }
 
-r.get("/payments", async (_req, res, next) => {
+r.get("/payments", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const orders = await Order.find()
       .sort({ createdAt: -1 })
@@ -1135,7 +1377,7 @@ r.get("/payments", async (_req, res, next) => {
   }
 });
 
-r.get("/stats", async (_req, res, next) => {
+r.get("/stats", requireAuth, requireAdmin, async (_req, res, next) => {
   try {
     const [orderCount, userCount, revenueAgg] = await Promise.all([
       Order.countDocuments(),
@@ -1146,6 +1388,256 @@ r.get("/stats", async (_req, res, next) => {
       ]),
     ]);
     res.json({ orderCount, userCount, revenue: revenueAgg[0]?.total ?? 0 });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * GET /api/admin/operational-stats
+ * Operational counts for Shop Manager dashboard (no revenue, no profit, no payments).
+ */
+r.get("/operational-stats", requireAuth, requireStaff, async (_req, res, next) => {
+  try {
+    const [
+      ordersAwaitingProcessing,
+      ordersProcessing,
+      ordersAwaitingPacking,
+      ordersAwaitingShipment,
+      totalProducts,
+      lowStockProducts,
+      outOfStockProducts,
+    ] = await Promise.all([
+      Order.countDocuments({ status: { $in: ["Placed", "Confirmed"] } }),
+      Order.countDocuments({ status: "Processing" }),
+      Order.countDocuments({ status: { $in: ["Processing", "Hold"] } }),
+      Order.countDocuments({ status: "Packed" }),
+      Product.countDocuments(),
+      Product.countDocuments({ stock: { $gte: 1, $lte: 5 } }),
+      Product.countDocuments({ stock: { $lte: 0 } }),
+    ]);
+
+    res.json({
+      ordersAwaitingProcessing,
+      ordersProcessing,
+      ordersAwaitingPacking,
+      ordersAwaitingShipment,
+      totalProducts,
+      lowStockProducts,
+      outOfStockProducts,
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * GET /api/admin/audit-logs
+ * Security & compliance audit log access (Super Admin only).
+ */
+r.get("/audit-logs", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { targetType, action, page = "1", limit = "50" } = req.query as Record<string, string | undefined>;
+    const filter: any = {};
+    if (targetType) filter.targetType = targetType;
+    if (action) filter.action = action;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 50));
+    const skip = (pageNum - 1) * limitNum;
+
+    const [total, logs] = await Promise.all([
+      AuditLog.countDocuments(filter),
+      AuditLog.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .populate("actorId", "name email role")
+        .lean(),
+    ]);
+
+    res.json({ total, page: pageNum, limit: limitNum, logs });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * GET /api/admin/managers
+ * Lists all Shop Manager accounts (Super Admin only).
+ */
+r.get("/managers", requireAuth, requireAdmin, async (_req, res, next) => {
+  try {
+    const managers = await User.find({ role: "shop_manager" })
+      .select("-passwordHash -resetOtpHash -loginOtpHash")
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json({
+      managers: managers.map((m) => ({
+        id: String(m._id),
+        name: m.name,
+        email: m.email,
+        phone: m.phone || "",
+        role: m.role,
+        isBlocked: Boolean(m.isBlocked),
+        createdAt: m.createdAt,
+        lastLoginAt: m.lastLoginAt,
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * POST /api/admin/managers
+ * Creates a new Shop Manager account (Super Admin only).
+ */
+r.post("/managers", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      name: z.string().trim().min(1, "Name is required").max(80),
+      email: z.string().trim().email("Valid email required"),
+      password: z.string().min(6, "Password must be at least 6 characters"),
+      phone: z.string().trim().max(20).optional().default(""),
+    });
+    const data = schema.parse(req.body);
+    const lowerEmail = data.email.toLowerCase();
+
+    const existing = await User.findOne({ email: lowerEmail });
+    if (existing) {
+      throw new HttpError(409, `An account with email ${lowerEmail} already exists.`);
+    }
+
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const manager = await User.create({
+      name: data.name,
+      email: lowerEmail,
+      passwordHash,
+      passwordSet: true,
+      role: "shop_manager",
+      phone: data.phone,
+      emailVerified: true,
+      emailVerifiedAt: new Date(),
+    });
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole: "admin",
+      actorEmail: req.user?.email,
+      action: "manager.create",
+      targetType: "user",
+      targetId: String(manager._id),
+      targetIdentifier: manager.email,
+      metadata: { name: manager.name, email: manager.email, role: "shop_manager" },
+    }).catch(() => {});
+
+    res.status(201).json({
+      manager: {
+        id: String(manager._id),
+        name: manager.name,
+        email: manager.email,
+        phone: manager.phone,
+        role: manager.role,
+        isBlocked: manager.isBlocked,
+        createdAt: manager.createdAt,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * PATCH /api/admin/managers/:id/status
+ * Deactivates/Reactivates a Shop Manager (Super Admin only).
+ */
+r.patch("/managers/:id/status", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { isBlocked } = z.object({ isBlocked: z.boolean() }).parse(req.body);
+    const manager = await User.findOneAndUpdate(
+      { _id: req.params.id, role: "shop_manager" },
+      { isBlocked },
+      { new: true }
+    ).select("-passwordHash -resetOtpHash -loginOtpHash");
+    if (!manager) throw new HttpError(404, "Shop Manager not found");
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole: "admin",
+      actorEmail: req.user?.email,
+      action: isBlocked ? "manager.disable" : "manager.reactivate",
+      targetType: "user",
+      targetId: String(manager._id),
+      targetIdentifier: manager.email,
+      metadata: { isBlocked },
+    }).catch(() => {});
+
+    res.json({
+      manager: {
+        id: String(manager._id),
+        name: manager.name,
+        email: manager.email,
+        phone: manager.phone,
+        role: manager.role,
+        isBlocked: manager.isBlocked,
+        createdAt: manager.createdAt,
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * PATCH /api/admin/managers/:id/password
+ * Resets a Shop Manager password (Super Admin only).
+ */
+r.patch("/managers/:id/password", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const { password } = z.object({ password: z.string().min(6, "Password must be at least 6 characters") }).parse(req.body);
+    const manager = await User.findOne({ _id: req.params.id, role: "shop_manager" });
+    if (!manager) throw new HttpError(404, "Shop Manager not found");
+
+    manager.passwordHash = await bcrypt.hash(password, 10);
+    manager.passwordSet = true;
+    await manager.save();
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole: "admin",
+      actorEmail: req.user?.email,
+      action: "manager.password_reset",
+      targetType: "user",
+      targetId: String(manager._id),
+      targetIdentifier: manager.email,
+    }).catch(() => {});
+
+    res.json({ ok: true, message: "Shop Manager password updated successfully." });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * DELETE /api/admin/managers/:id
+ * Permanently removes a Shop Manager account (Super Admin only).
+ */
+r.delete("/managers/:id", requireAuth, requireAdmin, async (req, res, next) => {
+  try {
+    const manager = await User.findOneAndDelete({ _id: req.params.id, role: "shop_manager" });
+    if (!manager) throw new HttpError(404, "Shop Manager not found");
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole: "admin",
+      actorEmail: req.user?.email,
+      action: "manager.delete",
+      targetType: "user",
+      targetId: String(manager._id),
+      targetIdentifier: manager.email,
+    }).catch(() => {});
+
+    res.json({ ok: true, message: "Shop Manager account deleted." });
   } catch (e) {
     next(e);
   }

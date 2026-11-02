@@ -2,7 +2,8 @@ import { Router } from "express";
 import { z } from "zod";
 import { Category } from "../models/Category";
 import { Product } from "../models/Product";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireAdmin, requireStaff } from "../middleware/auth";
+import { logAuditEvent } from "../services/audit.service";
 import { HttpError } from "../middleware/error";
 import { OUT_OF_STOCK_WINDOW_MS } from "../services/inventory.service";
 
@@ -130,7 +131,7 @@ r.get("/tree", async (_req, res, next) => {
 });
 
 // Admin: List all categories including empty ones
-r.get(["/admin", "/admin/all"], requireAuth, requireAdmin, async (_req, res, next) => {
+r.get(["/admin", "/admin/all"], requireAuth, requireStaff, async (_req, res, next) => {
   try {
     const categories = await withProductCounts();
     res.json({ categories });
@@ -140,7 +141,7 @@ r.get(["/admin", "/admin/all"], requireAuth, requireAdmin, async (_req, res, nex
 });
 
 // Admin: Category tree with all categories
-r.get("/admin/tree", requireAuth, requireAdmin, async (_req, res, next) => {
+r.get("/admin/tree", requireAuth, requireStaff, async (_req, res, next) => {
   try {
     const categories = await withProductCounts();
     const rootCategories = categories.filter((c) => !c.parentId);
@@ -161,7 +162,7 @@ r.get("/admin/tree", requireAuth, requireAdmin, async (_req, res, next) => {
 
 // Dedicated Admin Category Router (mirroring existing admin routers like adminCouponRouter)
 export const adminCategoryRouter = Router();
-adminCategoryRouter.use(requireAuth, requireAdmin);
+adminCategoryRouter.use(requireAuth, requireStaff);
 
 adminCategoryRouter.get(["/", "/all"], async (_req, res, next) => {
   try {
@@ -191,7 +192,7 @@ adminCategoryRouter.get("/tree", async (_req, res, next) => {
   }
 });
 
-r.post("/", requireAuth, requireAdmin, async (req, res, next) => {
+r.post("/", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const data = categorySchema.parse(req.body);
     const baseSlug = slugify(data.slug ?? data.name);
@@ -207,7 +208,7 @@ r.post("/", requireAuth, requireAdmin, async (req, res, next) => {
   }
 });
 
-r.patch("/sort/bulk", requireAuth, requireAdmin, async (req, res, next) => {
+r.patch("/sort/bulk", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const items = z.array(z.object({ id: z.string(), sortOrder: z.number(), parentId: z.string().nullable().optional() })).parse(req.body.items);
     await Promise.all(items.map((item) => Category.findByIdAndUpdate(item.id, { sortOrder: item.sortOrder, parentId: item.parentId || null })));
@@ -217,7 +218,7 @@ r.patch("/sort/bulk", requireAuth, requireAdmin, async (req, res, next) => {
   }
 });
 
-r.patch("/:id", requireAuth, requireAdmin, async (req, res, next) => {
+r.patch("/:id", requireAuth, requireStaff, async (req, res, next) => {
   try {
     const data = categorySchema.partial().parse(req.body);
     const patch: any = { ...data };

@@ -4,8 +4,9 @@ import mongoose from "mongoose";
 import { Product } from "../models/Product";
 import { StockHistory } from "../models/StockHistory";
 import { WaitingList } from "../models/WaitingList";
-import { requireAuth, requireAdmin } from "../middleware/auth";
+import { requireAuth, requireStaff } from "../middleware/auth";
 import { HttpError } from "../middleware/error";
+import { logAuditEvent } from "../services/audit.service";
 import {
   LOW_STOCK_THRESHOLD,
   OUT_OF_STOCK_WINDOW_MS,
@@ -14,7 +15,7 @@ import {
 } from "../services/inventory.service";
 
 const r = Router();
-r.use(requireAuth, requireAdmin);
+r.use(requireAuth, requireStaff);
 
 /**
  * GET /api/admin/inventory
@@ -158,6 +159,11 @@ r.post("/adjust", async (req, res, next) => {
   try {
     const data = adjustSchema.parse(req.body);
 
+    if (data.reason.trim().toLowerCase() === "other" && (!data.note || !data.note.trim())) {
+      throw new HttpError(400, 'An explanatory note is required when reason is "Other".');
+    }
+
+    const actorRole = req.user?.role === "shop_manager" ? "shop_manager" : "admin";
     const result = await manualAdjustStock({
       productId: data.productId,
       action: data.action,
@@ -165,8 +171,27 @@ r.post("/adjust", async (req, res, next) => {
       reason: data.reason,
       note: data.note,
       actorId: req.user?.sub ? new mongoose.Types.ObjectId(req.user.sub) : null,
-      actorType: "admin",
+      actorType: actorRole,
     });
+
+    logAuditEvent({
+      actorId: req.user!.sub,
+      actorRole,
+      actorEmail: req.user?.email,
+      action: "stock.adjust",
+      targetType: "inventory",
+      targetId: String(result.product._id),
+      targetIdentifier: result.product.name,
+      metadata: {
+        action: data.action,
+        quantity: data.quantity,
+        previousStock: result.previousStock,
+        newStock: result.newStock,
+        delta: result.delta,
+        reason: data.reason,
+        note: data.note,
+      },
+    }).catch(() => {});
 
     res.json({
       ok: true,

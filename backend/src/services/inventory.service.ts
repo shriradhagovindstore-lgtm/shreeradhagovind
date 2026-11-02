@@ -335,7 +335,7 @@ export interface AdjustStockParams {
   reason: string;
   note?: string;
   actorId?: Types.ObjectId | null;
-  actorType?: "admin" | "system";
+  actorType?: "admin" | "system" | "shop_manager";
 }
 
 /**
