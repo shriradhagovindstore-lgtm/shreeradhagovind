@@ -1,11 +1,14 @@
 import { Schema, model, type InferSchemaType } from "mongoose";
 
+export const USER_ROLES = ["user", "admin", "shop_manager"] as const;
+export type UserRole = (typeof USER_ROLES)[number];
+
 const userSchema = new Schema(
   {
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
     passwordHash: { type: String, default: "" },
-    role: { type: String, enum: ["user", "admin", "shop_manager"], default: "user", index: true },
+    role: { type: String, enum: USER_ROLES, default: "user", index: true },
     provider: { type: String, enum: ["password", "google"], default: "password" },
     avatar: { type: String, default: "" },
     phone: { type: String, default: "" },

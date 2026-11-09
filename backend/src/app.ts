@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import mongoose from "mongoose";
 import { env } from "./config/env";
 import { notFound, errorHandler } from "./middleware/error";
+import { USER_ROLES } from "./models/User";
 
 import authRoutes from "./routes/auth.routes";
 import productRoutes from "./routes/product.routes";
@@ -68,6 +69,8 @@ app.get("/api/health", (_req, res) => {
     status: isDbReady ? "healthy" : "db_disconnected",
     dbState: mongoose.connection.readyState,
     ts: Date.now(),
+    commit: process.env.RENDER_GIT_COMMIT || "3d497e7+",
+    roles: USER_ROLES,
   });
 });
 

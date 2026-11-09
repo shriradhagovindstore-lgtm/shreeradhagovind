@@ -1,14 +1,15 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
 import { env } from "../config/env";
+import type { UserRole } from "../models/User";
 
 export type JwtPayload = {
   sub: string;
-  role?: "user" | "admin" | "shop_manager";
+  role?: UserRole;
   email?: string;
   purpose?: string;
 };
 
-export const signToken = (p: { sub: string; role?: "user" | "admin" | "shop_manager"; email?: string }) =>
+export const signToken = (p: { sub: string; role?: UserRole; email?: string }) =>
   jwt.sign(p, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as SignOptions["expiresIn"] });
 
 export const signPurposeToken = (
