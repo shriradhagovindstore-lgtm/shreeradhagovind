@@ -10,7 +10,8 @@ import {
   ArrowRight,
   Tag,
 } from "lucide-react";
-import type { Order, Product } from "../../lib/store";
+import type { Order } from "../../lib/store";
+import type { Product } from "../../lib/products";
 
 interface ShopManagerDashboardProps {
   orders: Order[];
@@ -45,43 +46,45 @@ export function ShopManagerDashboard({
   return (
     <div className="space-y-6">
       {/* Header Banner */}
-      <section className="rounded-xl bg-white border border-stone-200 p-6 text-stone-900 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <section className="rounded-xl bg-white border border-stone-200 p-4 sm:p-6 text-stone-900 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800 text-[11px] font-bold uppercase tracking-wider">
                 Store Operations
               </span>
               <span className="text-xs text-stone-400 font-medium">
                 {new Date().toLocaleDateString("en-IN", {
-                  weekday: "long",
+                  weekday: "short",
                   year: "numeric",
                   month: "short",
                   day: "numeric",
                 })}
               </span>
             </div>
-            <h1 className="font-serif text-3xl font-bold text-stone-900 mt-1">
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold text-stone-900 mt-1">
               Shop Manager Console
             </h1>
-            <p className="mt-1 text-sm text-stone-500">
+            <p className="mt-1 text-xs sm:text-sm text-stone-500">
               Manage product listings, stock counts, order packaging, and courier dispatches.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-stone-100">
             <button
+              type="button"
               onClick={() => onNavigateTab("orders")}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-teal-700 px-3.5 text-xs font-semibold text-white hover:bg-teal-800 transition shadow-xs cursor-pointer"
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg bg-teal-700 px-3.5 text-xs font-semibold text-white hover:bg-teal-800 transition shadow-xs cursor-pointer"
             >
-              <ShoppingCart className="h-3.5 w-3.5" />
-              <span>Orders Queue ({activeOrders.length})</span>
+              <ShoppingCart className="h-4 w-4 shrink-0" />
+              <span>Orders ({activeOrders.length})</span>
             </button>
             <button
+              type="button"
               onClick={() => onNavigateTab("inventory")}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition shadow-xs cursor-pointer"
+              className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-stone-300 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition shadow-xs cursor-pointer"
             >
-              <Boxes className="h-3.5 w-3.5" />
+              <Boxes className="h-4 w-4 shrink-0" />
               <span>Stock Adjustments</span>
             </button>
           </div>
@@ -89,19 +92,19 @@ export function ShopManagerDashboard({
       </section>
 
       {/* Primary Operational Metric Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Awaiting Processing */}
         <div
           onClick={() => onNavigateTab("orders")}
-          className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs hover:border-teal-300 transition cursor-pointer"
+          className="rounded-xl border border-stone-200 bg-white p-3.5 sm:p-5 shadow-xs hover:border-teal-300 transition cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between text-stone-500">
-            <span className="text-xs font-bold uppercase tracking-wider">Awaiting Confirmation</span>
-            <Clock className="h-4 w-4 text-amber-500" />
+          <div className="flex items-center justify-between text-stone-500 gap-1">
+            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider truncate">Awaiting Confirm</span>
+            <Clock className="h-4 w-4 text-amber-500 shrink-0" />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-bold font-mono text-stone-900">{awaitingProcessing}</span>
-            <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+          <div className="mt-2.5 sm:mt-3 flex items-baseline justify-between gap-1 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-bold font-mono text-stone-900">{awaitingProcessing}</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded whitespace-nowrap">
               Needs confirm
             </span>
           </div>
@@ -110,15 +113,15 @@ export function ShopManagerDashboard({
         {/* In Processing / Packing */}
         <div
           onClick={() => onNavigateTab("orders")}
-          className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs hover:border-teal-300 transition cursor-pointer"
+          className="rounded-xl border border-stone-200 bg-white p-3.5 sm:p-5 shadow-xs hover:border-teal-300 transition cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between text-stone-500">
-            <span className="text-xs font-bold uppercase tracking-wider">In Packing / Prep</span>
-            <Package className="h-4 w-4 text-blue-500" />
+          <div className="flex items-center justify-between text-stone-500 gap-1">
+            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider truncate">In Packing / Prep</span>
+            <Package className="h-4 w-4 text-blue-500 shrink-0" />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-bold font-mono text-stone-900">{inProcessing}</span>
-            <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+          <div className="mt-2.5 sm:mt-3 flex items-baseline justify-between gap-1 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-bold font-mono text-stone-900">{inProcessing}</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded whitespace-nowrap">
               Processing
             </span>
           </div>
@@ -127,15 +130,15 @@ export function ShopManagerDashboard({
         {/* Ready to Ship */}
         <div
           onClick={() => onNavigateTab("orders")}
-          className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs hover:border-teal-300 transition cursor-pointer"
+          className="rounded-xl border border-stone-200 bg-white p-3.5 sm:p-5 shadow-xs hover:border-teal-300 transition cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between text-stone-500">
-            <span className="text-xs font-bold uppercase tracking-wider">Packed (Ready for AWB)</span>
-            <Truck className="h-4 w-4 text-teal-600" />
+          <div className="flex items-center justify-between text-stone-500 gap-1">
+            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider truncate">Packed (Ready)</span>
+            <Truck className="h-4 w-4 text-teal-600 shrink-0" />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-bold font-mono text-stone-900">{readyToShip}</span>
-            <span className="text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded">
+          <div className="mt-2.5 sm:mt-3 flex items-baseline justify-between gap-1 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-bold font-mono text-stone-900">{readyToShip}</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded whitespace-nowrap">
               Needs Courier/AWB
             </span>
           </div>
@@ -144,15 +147,15 @@ export function ShopManagerDashboard({
         {/* Shipped In Transit */}
         <div
           onClick={() => onNavigateTab("delivery")}
-          className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs hover:border-teal-300 transition cursor-pointer"
+          className="rounded-xl border border-stone-200 bg-white p-3.5 sm:p-5 shadow-xs hover:border-teal-300 transition cursor-pointer flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between text-stone-500">
-            <span className="text-xs font-bold uppercase tracking-wider">Shipped / In Transit</span>
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+          <div className="flex items-center justify-between text-stone-500 gap-1">
+            <span className="text-[11px] sm:text-xs font-bold uppercase tracking-wider truncate">Shipped / In Transit</span>
+            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
           </div>
-          <div className="mt-3 flex items-baseline justify-between">
-            <span className="text-3xl font-bold font-mono text-stone-900">{shippedInTransit}</span>
-            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+          <div className="mt-2.5 sm:mt-3 flex items-baseline justify-between gap-1 flex-wrap">
+            <span className="text-2xl sm:text-3xl font-bold font-mono text-stone-900">{shippedInTransit}</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded whitespace-nowrap">
               Dispatched
             </span>
           </div>
@@ -204,21 +207,22 @@ export function ShopManagerDashboard({
       </div>
 
       {/* Operational Orders Queue Section */}
-      <div className="bg-white rounded-xl border border-stone-200 p-6 shadow-xs">
+      <div className="bg-white rounded-xl border border-stone-200 p-4 sm:p-6 shadow-xs">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-teal-800">
               Active Fulfillment Queue
             </p>
-            <h2 className="font-serif text-xl font-bold text-stone-900">
+            <h2 className="font-serif text-lg sm:text-xl font-bold text-stone-900">
               Orders Requiring Operations Action
             </h2>
           </div>
           <button
+            type="button"
             onClick={() => onNavigateTab("orders")}
-            className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-stone-300 px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 min-h-[36px] sm:min-h-[32px] rounded-lg border border-stone-300 px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 transition cursor-pointer shrink-0"
           >
-            <span>View All Orders</span>
+            <span>View All</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -230,104 +234,206 @@ export function ShopManagerDashboard({
             <p className="text-xs text-stone-400 mt-1">New customer orders will appear here automatically.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-stone-50 border-y border-stone-200 text-stone-500 uppercase tracking-wider font-semibold">
-                <tr>
-                  <th className="py-2.5 px-3">Order #</th>
-                  <th className="py-2.5 px-3">Customer & Destination</th>
-                  <th className="py-2.5 px-3">Items</th>
-                  <th className="py-2.5 px-3">Payment Type</th>
-                  <th className="py-2.5 px-3">Courier / AWB</th>
-                  <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100">
-                {activeOrders.slice(0, 10).map((o) => {
-                  const isCod = o.payment?.method === "cod";
-                  const totalUnits = (o.items || []).reduce((acc, i) => acc + (i.qty || 1), 0);
-                  const orderNum = o.orderNo ? `#${o.orderNo}` : `#${o.id.slice(-6).toUpperCase()}`;
+          <>
+            {/* Mobile Dedicated Order Cards (visible below md: breakpoint) */}
+            <div className="block md:hidden space-y-3">
+              {activeOrders.slice(0, 10).map((o) => {
+                const isCod = o.payment?.method === "cod";
+                const totalUnits = (o.items || []).reduce((acc, i) => acc + (i.qty || 1), 0);
+                const orderNum = o.orderNo ? `#${o.orderNo}` : `#${o.id.slice(-6).toUpperCase()}`;
 
-                  return (
-                    <tr key={o.id} className="hover:bg-stone-50/70 transition">
-                      <td className="py-3 px-3 font-mono font-bold text-stone-900">
-                        {orderNum}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-semibold text-stone-900">{o.address?.name || "Customer"}</div>
-                        <div className="text-[11px] text-stone-500">
-                          {[o.address?.city, o.address?.state].filter(Boolean).join(", ")}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
-                        <span className="font-medium text-stone-700">
+                return (
+                  <div
+                    key={o.id}
+                    className="rounded-xl border border-stone-200 bg-stone-50/50 p-3.5 space-y-2.5 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2 border-b border-stone-200/80 pb-2">
+                      <span className="font-mono font-bold text-sm text-stone-900">{orderNum}</span>
+                      <span
+                        className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                          o.status === "Placed"
+                            ? "bg-stone-100 text-stone-700"
+                            : o.status === "Confirmed"
+                              ? "bg-amber-100 text-amber-800"
+                              : o.status === "Processing"
+                                ? "bg-blue-100 text-blue-800"
+                                : o.status === "Packed"
+                                  ? "bg-teal-100 text-teal-800"
+                                  : o.status === "Shipped"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : "bg-stone-100 text-stone-700"
+                        }`}
+                      >
+                        {o.status || "Placed"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1 text-xs">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-stone-500 font-medium">Customer:</span>
+                        <span className="font-semibold text-stone-900 text-right truncate">{o.address?.name || "Customer"}</span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-stone-500 font-medium">Destination:</span>
+                        <span className="text-stone-600 text-right truncate max-w-[200px]">
+                          {[o.address?.city, o.address?.state].filter(Boolean).join(", ") || "India"}
+                        </span>
+                      </div>
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="text-stone-500 font-medium">Items to Pack:</span>
+                        <span className="font-semibold text-stone-800 font-mono">
                           {totalUnits} unit{totalUnits !== 1 ? "s" : ""}
                         </span>
-                        <div className="text-[10px] text-stone-400 truncate max-w-[150px]">
-                          {(o.items || []).map((i) => i.product?.name).filter(Boolean).join(", ")}
-                        </div>
-                      </td>
-                      <td className="py-3 px-3">
+                      </div>
+                      <div className="text-[11px] text-stone-400 truncate pt-0.5">
+                        {(o.items || []).map((i) => i.product?.name).filter(Boolean).join(", ")}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-200/60 text-xs">
+                      <div className="shrink-0">
                         {isCod ? (
-                          <div className="inline-flex flex-col">
-                            <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px]">
-                              COD: Collect ₹{o.total}
-                            </span>
-                          </div>
+                          <span className="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px]">
+                            COD: Collect ₹{o.total}
+                          </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold text-[10px]">
+                          <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold text-[10px]">
                             Prepaid Online
                           </span>
                         )}
-                      </td>
-                      <td className="py-3 px-3 font-mono text-stone-600">
+                      </div>
+                      <div className="min-w-0 flex-1 text-right text-[11px] text-stone-600 font-mono">
                         {o.courier ? (
-                          <div>
-                            <span className="font-semibold text-stone-800">{o.courier}</span>
-                            {o.trackingId && (
-                              <span className="block text-[10px] text-teal-700 truncate max-w-[120px]">
-                                {o.trackingId}
-                              </span>
-                            )}
-                          </div>
+                          <span className="block font-semibold text-teal-800 truncate">{o.courier}</span>
                         ) : (
-                          <span className="text-stone-400 text-[11px]">Unassigned</span>
+                          <span className="block text-stone-400 italic">Courier unassigned</span>
                         )}
-                      </td>
-                      <td className="py-3 px-3">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                            o.status === "Placed"
-                              ? "bg-stone-100 text-stone-700"
-                              : o.status === "Confirmed"
-                                ? "bg-amber-100 text-amber-800"
-                                : o.status === "Processing"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : o.status === "Packed"
-                                    ? "bg-teal-100 text-teal-800"
-                                    : o.status === "Shipped"
-                                      ? "bg-emerald-100 text-emerald-800"
-                                      : "bg-stone-100 text-stone-700"
-                          }`}
-                        >
-                          {o.status || "Placed"}
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-right">
-                        <button
-                          onClick={() => onOpenOrder(o)}
-                          className="px-2.5 py-1 rounded-md bg-stone-900 text-white hover:bg-stone-800 text-[11px] font-semibold transition cursor-pointer"
-                        >
-                          Process
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        {o.trackingId ? (
+                          <span className="block text-[10px] text-teal-700 truncate" title={o.trackingId}>
+                            AWB: {o.trackingId}
+                          </span>
+                        ) : (
+                          <span className="block text-[10px] text-stone-400">
+                            AWB: Not assigned
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => onOpenOrder(o)}
+                      className="w-full min-h-[44px] rounded-lg bg-stone-900 text-white hover:bg-stone-800 text-xs font-semibold flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+                    >
+                      <Package className="h-4 w-4" />
+                      <span>Process Order ({orderNum})</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop Table (preserved unchanged at md: and above) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-stone-50 border-y border-stone-200 text-stone-500 uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th className="py-2.5 px-3">Order #</th>
+                    <th className="py-2.5 px-3">Customer & Destination</th>
+                    <th className="py-2.5 px-3">Items</th>
+                    <th className="py-2.5 px-3">Payment Type</th>
+                    <th className="py-2.5 px-3">Courier / AWB</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {activeOrders.slice(0, 10).map((o) => {
+                    const isCod = o.payment?.method === "cod";
+                    const totalUnits = (o.items || []).reduce((acc, i) => acc + (i.qty || 1), 0);
+                    const orderNum = o.orderNo ? `#${o.orderNo}` : `#${o.id.slice(-6).toUpperCase()}`;
+
+                    return (
+                      <tr key={o.id} className="hover:bg-stone-50/70 transition">
+                        <td className="py-3 px-3 font-mono font-bold text-stone-900">
+                          {orderNum}
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-semibold text-stone-900">{o.address?.name || "Customer"}</div>
+                          <div className="text-[11px] text-stone-500">
+                            {[o.address?.city, o.address?.state].filter(Boolean).join(", ")}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="font-medium text-stone-700">
+                            {totalUnits} unit{totalUnits !== 1 ? "s" : ""}
+                          </span>
+                          <div className="text-[10px] text-stone-400 truncate max-w-[150px]">
+                            {(o.items || []).map((i) => i.product?.name).filter(Boolean).join(", ")}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          {isCod ? (
+                            <div className="inline-flex flex-col">
+                              <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-bold text-[10px]">
+                                COD: Collect ₹{o.total}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold text-[10px]">
+                              Prepaid Online
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 font-mono text-stone-600">
+                          {o.courier ? (
+                            <div>
+                              <span className="font-semibold text-stone-800">{o.courier}</span>
+                              {o.trackingId && (
+                                <span className="block text-[10px] text-teal-700 truncate max-w-[120px]">
+                                  {o.trackingId}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-stone-400 text-[11px]">Unassigned</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+                              o.status === "Placed"
+                                ? "bg-stone-100 text-stone-700"
+                                : o.status === "Confirmed"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : o.status === "Processing"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : o.status === "Packed"
+                                      ? "bg-teal-100 text-teal-800"
+                                      : o.status === "Shipped"
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : "bg-stone-100 text-stone-700"
+                            }`}
+                          >
+                            {o.status || "Placed"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => onOpenOrder(o)}
+                            className="px-3 py-1.5 rounded-md bg-stone-900 text-white hover:bg-stone-800 text-xs font-semibold transition cursor-pointer"
+                          >
+                            Process
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 

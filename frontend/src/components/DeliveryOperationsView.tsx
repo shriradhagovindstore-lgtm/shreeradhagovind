@@ -1180,9 +1180,9 @@ export function DeliveryOperationsView({
 
         {/* Date Preset Filter Bar */}
         <div className="mt-6 pt-5 border-t border-stone-200/80 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-            <span className="text-xs font-semibold text-stone-400 mr-1 flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5" /> Date:
+          <div className="flex flex-wrap items-center gap-1.5 max-w-full">
+            <span className="text-xs font-semibold text-stone-400 mr-1 flex items-center gap-1 shrink-0 whitespace-nowrap">
+              <Calendar className="h-3.5 w-3.5 shrink-0" /> Date:
             </span>
             {(
               [
@@ -1197,9 +1197,10 @@ export function DeliveryOperationsView({
               const active = datePreset === p.id;
               return (
                 <button
+                  type="button"
                   key={p.id}
                   onClick={() => setDatePreset(p.id)}
-                  className={`h-8 px-3 rounded-lg text-xs font-semibold transition border ${
+                  className={`min-h-[44px] sm:min-h-0 h-11 sm:h-8 px-3 rounded-lg text-xs font-semibold transition border whitespace-nowrap shrink-0 cursor-pointer ${
                     active
                       ? "bg-stone-900 text-white border-stone-900 shadow-xs"
                       : "bg-white text-stone-600 border-stone-200 hover:border-stone-400 hover:text-stone-900"
@@ -1212,19 +1213,19 @@ export function DeliveryOperationsView({
           </div>
 
           {datePreset === "custom" && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <input
                 type="date"
                 value={customFrom}
                 onChange={(e) => setCustomFrom(e.target.value)}
-                className="h-8 px-2 text-xs rounded border border-stone-300 bg-white"
+                className="min-h-[44px] sm:min-h-0 h-11 sm:h-8 px-2 text-base sm:text-xs rounded border border-stone-300 bg-white"
               />
               <span className="text-xs text-stone-400">to</span>
               <input
                 type="date"
                 value={customTo}
                 onChange={(e) => setCustomTo(e.target.value)}
-                className="h-8 px-2 text-xs rounded border border-stone-300 bg-white"
+                className="min-h-[44px] sm:min-h-0 h-11 sm:h-8 px-2 text-base sm:text-xs rounded border border-stone-300 bg-white"
               />
             </div>
           )}
@@ -1382,7 +1383,7 @@ export function DeliveryOperationsView({
           {/* Pipeline Lifecycle Bar */}
           <div className="rounded-xl border border-stone-200 bg-white p-5 shadow-xs">
             <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-4">Shipment Lifecycle Pipeline</h3>
-            <div className="grid grid-cols-4 gap-2 text-center text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <span className="block text-[11px] text-slate-500 font-semibold">1. Manifest / Pending</span>
                 <span className="block text-xl font-bold text-slate-800 font-serif mt-1">{kpis.pendingCount}</span>
@@ -1411,7 +1412,43 @@ export function DeliveryOperationsView({
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Courier Matrix Cards (< md) */}
+            <div className="block md:hidden divide-y divide-stone-200/70">
+              {courierMatrix.map((row) => (
+                <div key={row.courier} className="py-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <CourierBadge courier={row.courier} />
+                    <span className="font-mono font-bold text-xs text-stone-900 bg-stone-100 px-2.5 py-1 rounded">
+                      {row.rate}% Delivery Rate
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="bg-stone-50 p-2 rounded-lg border border-stone-100">
+                      <span className="text-[10px] text-stone-500 block">Total</span>
+                      <span className="font-mono font-bold text-stone-900">{row.total}</span>
+                    </div>
+                    <div className="bg-emerald-50/60 p-2 rounded-lg border border-emerald-100">
+                      <span className="text-[10px] text-emerald-700 block">Delivered</span>
+                      <span className="font-mono font-bold text-emerald-700">{row.delivered}</span>
+                    </div>
+                    <div className="bg-sky-50/60 p-2 rounded-lg border border-sky-100">
+                      <span className="text-[10px] text-sky-700 block">In Transit</span>
+                      <span className="font-mono font-bold text-sky-700">{row.inTransit}</span>
+                    </div>
+                  </div>
+                  {(row.exception > 0 || row.rto > 0 || row.ofd > 0) && (
+                    <div className="flex items-center gap-2 text-[11px] text-stone-600 flex-wrap">
+                      {row.ofd > 0 && <span className="text-amber-700">OFD: <strong>{row.ofd}</strong></span>}
+                      {row.exception > 0 && <span className="text-rose-600">Exceptions: <strong>{row.exception}</strong></span>}
+                      {row.rto > 0 && <span className="text-purple-700">RTO: <strong>{row.rto}</strong></span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Courier Matrix Table (>= md) */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs text-stone-700">
                 <thead className="bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
                   <tr>
@@ -1534,7 +1571,145 @@ export function DeliveryOperationsView({
 
           {/* Operational Table */}
           <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
+            {/* Mobile Shipments Cards (< md) */}
+            <div className="block md:hidden divide-y divide-stone-200">
+              {allShipmentsFiltered.length === 0 ? (
+                <div className="py-12 text-center text-stone-400 p-4">
+                  <Package className="h-10 w-10 mx-auto text-stone-300 mb-2" />
+                  <p className="font-semibold text-stone-700 text-sm">No shipments matching criteria</p>
+                  <p className="text-xs mt-0.5">Try widening date range or clearing filters.</p>
+                </div>
+              ) : (
+                allShipmentsFiltered.map((o) => {
+                  const num = displayOrderNumber(o);
+                  const op = getShipmentOperationalStatus(o);
+                  const td = o.courierTrackingData;
+                  const delay = checkDelayRule(o);
+                  const isSelected = selectedOrderIds.includes(o.id);
+                  const isRefreshing = refreshingOrderId === o.id;
+
+                  return (
+                    <div
+                      key={o.id}
+                      className={`p-4 space-y-3 bg-white transition ${isSelected ? "bg-stone-50/90" : ""}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectOrder(o.id)}
+                            className="rounded border-stone-300 h-4 w-4"
+                          />
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => onOpenOrder(o)}
+                              className="font-mono font-bold text-stone-900 text-sm hover:underline"
+                            >
+                              #{num}
+                            </button>
+                            <span className="text-[11px] text-stone-400 block font-mono">
+                              {new Date(o.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                          <StatusBadge status={op} />
+                          {delay.isDelayed && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                              <AlertTriangle className="h-3 w-3" /> Delayed
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-100">
+                        <div className="min-w-0">
+                          <span className="font-bold text-xs text-stone-900 block truncate">
+                            {o.address?.name || "Customer"}
+                          </span>
+                          <span className="text-[11px] text-stone-500 block truncate">
+                            {o.address?.city || "-"}, {o.address?.state || ""}
+                          </span>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <CourierBadge courier={o.courier} provider={td?.provider} />
+                        </div>
+                      </div>
+
+                      {/* AWB + Tracking milestone */}
+                      <div className="rounded-lg bg-stone-50 p-2.5 border border-stone-100 space-y-1 text-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium text-stone-500">AWB:</span>
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono font-bold text-stone-900 select-all">
+                              {o.trackingId || "Pending"}
+                            </span>
+                            {o.trackingId && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(o.trackingId || "");
+                                  toast.success(`AWB ${o.trackingId} copied`);
+                                }}
+                                className="text-stone-400 hover:text-stone-700 p-1"
+                                title="Copy AWB"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        {td?.currentLocation && (
+                          <div className="flex items-center gap-1 text-[11px] text-stone-700 font-semibold truncate pt-0.5">
+                            <MapPin className="h-3 w-3 text-stone-400 shrink-0" />
+                            <span className="truncate">{td.currentLocation}</span>
+                          </div>
+                        )}
+                        {td?.latestMessage && (
+                          <p className="text-[10px] text-stone-500 truncate" title={td.latestMessage}>
+                            {td.latestMessage}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Action buttons on mobile */}
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => onOpenOrder(o)}
+                          className="flex-1 h-11 px-4 rounded-xl bg-stone-900 text-white text-xs font-semibold hover:bg-stone-800 transition shadow-xs flex items-center justify-center cursor-pointer min-h-[44px]"
+                        >
+                          Manage Order
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setViewingTrackingOrder(o)}
+                          className="h-11 px-3.5 rounded-xl border border-stone-200 text-xs font-semibold hover:bg-stone-100 text-stone-700 transition flex items-center justify-center gap-1 min-h-[44px] cursor-pointer"
+                          title="View tracking milestones"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          <span>Track</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRefreshSingleTracking(o)}
+                          disabled={isRefreshing}
+                          className="h-11 px-3 rounded-xl border border-stone-200 hover:bg-stone-100 text-stone-700 transition disabled:opacity-50 flex items-center justify-center min-h-[44px] cursor-pointer"
+                          title="Refresh tracking"
+                        >
+                          <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin text-stone-900" : ""}`} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop Operational Table (>= md) */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left text-xs text-stone-700">
                 <thead className="bg-stone-50 border-b border-stone-200 text-[11px] font-bold text-stone-500 uppercase tracking-wider">
                   <tr>

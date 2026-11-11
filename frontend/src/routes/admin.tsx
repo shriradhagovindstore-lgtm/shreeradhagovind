@@ -1,6 +1,6 @@
 import { ShopManagerDashboard } from "../components/admin/ShopManagerDashboard";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useStore,
   displayOrderNumber,
@@ -93,6 +93,7 @@ import {
   Layers,
   Send,
   Award,
+  Menu,
 } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -288,7 +289,7 @@ function generateOrderShippingPlainText(order: Order): string {
     order.items.forEach((it, idx) => {
       const q = it.qty || 1;
       totalQty += q;
-      const itemName = it.product?.name || it.name || "Product";
+      const itemName = it.product?.name || "Product";
       lines.push(`  ${idx + 1}. ${itemName} x ${q}`);
     });
     lines.push(`Total Units to Pack: ${totalQty}`);
@@ -376,21 +377,23 @@ function WhatsAppCustomerButton({
   order,
   template,
   variant = "sm",
+  fullWidth = false,
 }: {
   order: Order;
   template?: string;
   variant?: "sm" | "md";
+  fullWidth?: boolean;
 }) {
   const res = buildWhatsAppOrderUrl(order, template);
+  const sizeClass = variant === "md" ? "h-11 min-h-[44px] px-4" : "h-9 px-3";
+  const widthClass = fullWidth ? "w-full justify-center whitespace-nowrap" : "";
   if (!res.url) {
     return (
       <span
         title={res.disabledReason || "No valid phone number available"}
-        className={`inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 text-muted-foreground/60 text-xs font-semibold cursor-not-allowed opacity-60 ${
-          variant === "md" ? "h-11 px-4" : "h-9 px-3"
-        }`}
+        className={`inline-flex items-center gap-1.5 rounded-lg border border-border/60 bg-muted/40 text-muted-foreground/60 text-xs font-semibold cursor-not-allowed opacity-60 ${sizeClass} ${widthClass}`}
       >
-        <MessageCircle className="h-3.5 w-3.5" />
+        <MessageCircle className="h-3.5 w-3.5 shrink-0" />
         <span>WhatsApp</span>
       </span>
     );
@@ -400,12 +403,10 @@ function WhatsAppCustomerButton({
       href={res.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/30 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-600/50 text-xs font-semibold transition shadow-sm ${
-        variant === "md" ? "h-11 px-4" : "h-9 px-3"
-      }`}
+      className={`inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/30 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-600/50 text-xs font-semibold transition shadow-sm ${sizeClass} ${widthClass}`}
       title="Open WhatsApp chat with customer in new tab"
     >
-      <MessageCircle className="h-3.5 w-3.5 text-emerald-600" />
+      <MessageCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
       <span>WhatsApp</span>
     </a>
   );
@@ -447,6 +448,8 @@ function AdminRoot() {
   const [u, setU] = useState("");
   const [p, setP] = useState("");
   const [tab, setTab] = useState<Tab>("dash");
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const mobileNavRef = useRef<HTMLElement | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [pickCat, setPickCat] = useState<string | null>(null);
   const [editingOrder, setEditingOrder] = useState<Order | null>(null);
@@ -469,6 +472,16 @@ function AdminRoot() {
       setTab("dash");
     }
   }, [isManager, tab]);
+
+  useEffect(() => {
+    if (mobileNavOpen || typeof window === "undefined" || window.innerWidth >= 768) return;
+    const navEl = mobileNavRef.current;
+    if (!navEl) return;
+    const activeBtn = navEl.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!activeBtn) return;
+    const targetLeft = Math.max(0, activeBtn.offsetLeft - (navEl.clientWidth - activeBtn.clientWidth) / 2);
+    navEl.scrollTo({ left: targetLeft, behavior: "smooth" });
+  }, [tab, mobileNavOpen]);
 
   const [managers, setManagers] = useState<{
     id: string;
@@ -648,9 +661,9 @@ function AdminRoot() {
             </form>
             <Link
               to="/"
-              className="block text-center text-xs text-muted-foreground mt-4 hover:text-primary"
+              className="block text-center text-xs text-muted-foreground mt-4 hover:text-primary py-2.5 min-h-[44px] flex items-center justify-center transition"
             >
-              Back to store
+              ← Back to store
             </Link>
           </div>
         </div>
@@ -691,18 +704,126 @@ function AdminRoot() {
   return (
     <div className="min-h-screen flex flex-col bg-[#f8f8f8] md:flex-row font-sans">
       <aside className="w-full bg-white border-r border-stone-200 text-stone-800 p-4 flex flex-col md:sticky md:top-0 md:h-screen md:w-64 md:p-5 shadow-xs z-20">
-        <div className="flex items-center gap-3 mb-4 md:mb-8 pb-4 border-b border-stone-100">
-          <img
-            src="/brand-logo-large.png"
-            alt="Shri Radha Govind Store"
-            className="h-10 w-10 rounded-full object-cover ring-1 ring-stone-200"
-          />
-          <div>
-            <span className="block font-serif text-base font-bold text-stone-900 leading-tight">{isManager ? "Shop Manager" : "Admin Console"}</span>
-            <span className="text-[10px] uppercase font-semibold tracking-wider text-teal-800">{isManager ? "Store Operations" : "Shri Radha Govind"}</span>
+        <div className="flex items-center justify-between gap-3 mb-3 md:mb-8 pb-3 md:pb-4 border-b border-stone-100">
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src="/brand-logo-large.png"
+              alt="Shri Radha Govind Store"
+              className="h-10 w-10 rounded-full object-cover ring-1 ring-stone-200 shrink-0"
+            />
+            <div className="min-w-0">
+              <span className="block font-serif text-base font-bold text-stone-900 leading-tight truncate">{isManager ? "Shop Manager" : "Admin Console"}</span>
+              <span className="text-[10px] uppercase font-semibold tracking-wider text-teal-800 block truncate">{isManager ? "Store Operations" : "Shri Radha Govind"}</span>
+            </div>
           </div>
+          <button
+            type="button"
+            aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+            onClick={() => setMobileNavOpen((o) => !o)}
+            className="md:hidden p-2 rounded-lg border border-stone-200 text-stone-700 hover:bg-stone-100 min-h-[44px] min-w-[44px] flex items-center justify-center transition shrink-0 cursor-pointer"
+          >
+            {mobileNavOpen ? <XIcon className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
-        <nav className="flex gap-1 overflow-x-auto pb-2 md:block md:space-y-4 md:overflow-visible md:pb-0 md:flex-1">
+
+        {/* Mobile Expanded Drawer */}
+        {mobileNavOpen && (
+          <div className="md:hidden pb-3 border-b border-stone-200 mb-2 space-y-2 animate-in fade-in slide-in-from-top-2 duration-150">
+            {isManager ? (
+              <div className="space-y-1">
+                <NavBtn active={tab === "dash"} onClick={() => { setTab("dash"); setMobileNavOpen(false); }} icon={LayoutDashboard}>
+                  Dashboard
+                </NavBtn>
+                <NavBtn active={tab === "products"} onClick={() => { setTab("products"); setMobileNavOpen(false); }} icon={Package}>
+                  Products
+                </NavBtn>
+                <NavBtn active={tab === "inventory"} onClick={() => { setTab("inventory"); setMobileNavOpen(false); }} icon={Boxes}>
+                  Inventory
+                </NavBtn>
+                <NavBtn active={tab === "categories"} onClick={() => { setTab("categories"); setMobileNavOpen(false); }} icon={Tag}>
+                  Categories
+                </NavBtn>
+                <NavBtn active={tab === "orders"} onClick={() => { setTab("orders"); setMobileNavOpen(false); }} icon={ShoppingCart}>
+                  Orders
+                </NavBtn>
+                <NavBtn active={tab === "delivery"} onClick={() => { setTab("delivery"); setMobileNavOpen(false); }} icon={Truck}>
+                  Delivery Operations
+                </NavBtn>
+              </div>
+            ) : (
+              <div className="space-y-1 max-h-[60vh] overflow-y-auto pr-1">
+                <NavBtn active={tab === "dash"} onClick={() => { setTab("dash"); setMobileNavOpen(false); }} icon={LayoutDashboard}>
+                  Dashboard
+                </NavBtn>
+                <NavBtn active={tab === "products"} onClick={() => { setTab("products"); setMobileNavOpen(false); }} icon={Package}>
+                  Products
+                </NavBtn>
+                <NavBtn active={tab === "inventory"} onClick={() => { setTab("inventory"); setMobileNavOpen(false); }} icon={Boxes}>
+                  Inventory
+                </NavBtn>
+                <NavBtn active={tab === "categories"} onClick={() => { setTab("categories"); setMobileNavOpen(false); }} icon={Tag}>
+                  Categories
+                </NavBtn>
+                <NavBtn active={tab === "coupons"} onClick={() => { setTab("coupons"); setMobileNavOpen(false); }} icon={Percent}>
+                  Coupons & Promos
+                </NavBtn>
+                <NavBtn active={tab === "orders"} onClick={() => { setTab("orders"); setMobileNavOpen(false); }} icon={ShoppingCart}>
+                  Orders
+                </NavBtn>
+                <NavBtn active={tab === "returns"} onClick={() => { setTab("returns"); setMobileNavOpen(false); }} icon={RotateCcw}>
+                  Returns & Refunds
+                </NavBtn>
+                <NavBtn active={tab === "support"} onClick={() => { setTab("support"); setMobileNavOpen(false); }} icon={LifeBuoy}>
+                  Customer Support
+                </NavBtn>
+                <NavBtn active={tab === "delivery"} onClick={() => { setTab("delivery"); setMobileNavOpen(false); }} icon={Truck}>
+                  Delivery Operations
+                </NavBtn>
+                <NavBtn active={tab === "users"} onClick={() => { setTab("users"); setMobileNavOpen(false); }} icon={Users}>
+                  Customers & Staff
+                </NavBtn>
+                <NavBtn active={tab === "retention"} onClick={() => { setTab("retention"); setMobileNavOpen(false); }} icon={Award}>
+                  Retention & Loyalty
+                </NavBtn>
+                <NavBtn active={tab === "blogs"} onClick={() => { setTab("blogs"); setMobileNavOpen(false); }} icon={FileText}>
+                  Blog
+                </NavBtn>
+                <NavBtn active={tab === "reviews"} onClick={() => { setTab("reviews"); setMobileNavOpen(false); }} icon={Star}>
+                  Product Reviews
+                </NavBtn>
+                <NavBtn active={tab === "finance"} onClick={() => { setTab("finance"); setMobileNavOpen(false); }} icon={IndianRupee}>
+                  Finance & Analytics
+                </NavBtn>
+                <NavBtn active={tab === "payments"} onClick={() => { setTab("payments"); setMobileNavOpen(false); }} icon={CreditCard}>
+                  Payments
+                </NavBtn>
+                <NavBtn active={tab === "analytics"} onClick={() => { setTab("analytics"); setMobileNavOpen(false); }} icon={TrendingUp}>
+                  Conversion Analytics
+                </NavBtn>
+                <NavBtn active={tab === "settings"} onClick={() => { setTab("settings"); setMobileNavOpen(false); }} icon={SettingsIcon}>
+                  Settings
+                </NavBtn>
+              </div>
+            )}
+            <div className="pt-2 border-t border-stone-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={adminLogout}
+                className="flex items-center gap-2 text-sm text-stone-600 hover:text-stone-900 py-2 font-medium min-h-[44px] transition"
+              >
+                <LogOut className="h-4 w-4" /> Logout
+              </button>
+              <Link
+                to="/"
+                className="text-xs text-stone-500 hover:text-stone-900 py-2 font-medium min-h-[44px] flex items-center transition"
+              >
+                View storefront ↗
+              </Link>
+            </div>
+          </div>
+        )}
+
+        <nav ref={mobileNavRef} className={`${mobileNavOpen ? "hidden" : "flex"} gap-1.5 overflow-x-auto pb-2 md:block md:space-y-4 md:overflow-visible md:pb-0 md:flex-1`}>
         {isManager ? (
           <div>
             <span className="hidden md:block px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-stone-400">
@@ -822,10 +943,11 @@ function AdminRoot() {
           </>
         )}
 </nav>
-        <div className="mt-3 flex items-center gap-4 border-t border-stone-200 pt-3 md:block">
+        <div className="hidden md:block mt-3 border-t border-stone-200 pt-3">
           <button
+            type="button"
             onClick={adminLogout}
-            className="flex items-center gap-2 text-sm text-stone-600 hover:text-stone-900 py-2 font-medium transition"
+            className="flex items-center gap-2 text-sm text-stone-600 hover:text-stone-900 py-2 font-medium transition cursor-pointer"
           >
             <LogOut className="h-4 w-4" /> Logout
           </button>
@@ -1300,7 +1422,74 @@ function AdminRoot() {
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
+                      {/* Mobile action bar (< sm) */}
+                      <div className="sm:hidden pt-3 border-t border-border/60 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Grand Total</span>
+                          <span className="font-display font-bold text-lg text-primary">{grandTotalStr}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setEditingOrder(o)}
+                          className="w-full h-11 px-4 rounded-xl bg-stone-900 text-white text-xs font-semibold hover:bg-stone-800 transition shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          Manage Order
+                        </button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => downloadOrderPackingSlipPdf(o)}
+                            className="min-h-[44px] h-11 px-2.5 rounded-lg border border-border bg-white text-xs font-semibold hover:bg-stone-50 text-stone-700 transition inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <FileText className="h-3.5 w-3.5 text-stone-600 shrink-0" />
+                            <span className="truncate">Packing Slip</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => downloadOrderInvoicePdf(o)}
+                            className="min-h-[44px] h-11 px-2.5 rounded-lg border border-border bg-white text-xs font-semibold hover:bg-stone-50 text-stone-700 transition inline-flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Download className="h-3.5 w-3.5 text-stone-600 shrink-0" />
+                            <span className="truncate">Invoice</span>
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex-1 min-w-[120px]">
+                            <WhatsAppCustomerButton order={o} template={settings.whatsappTemplate} variant="md" fullWidth />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                const txt = generateOrderShippingPlainText(o);
+                                navigator.clipboard.writeText(txt);
+                                toast.success(`Order #${displayOrderNumber(o)} delivery details copied`);
+                              } catch {
+                                toast.error("Failed to copy delivery details");
+                              }
+                            }}
+                            className="flex-1 min-w-[120px] min-h-[44px] h-11 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+                            title="Copy complete delivery address & order details to clipboard"
+                          >
+                            <Copy className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span>Copy Details</span>
+                          </button>
+                          {o.invoiceRequest?.status === "pending" && (
+                            <button
+                              type="button"
+                              onClick={() => setFulfillingInvoiceOrder(o)}
+                              className="w-full min-h-[44px] h-11 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition inline-flex items-center justify-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+                              title="Fulfill invoice request and dispatch to customer"
+                            >
+                              <Send className="h-3.5 w-3.5 shrink-0" />
+                              <span>Send Invoice</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Desktop action bar (>= sm) */}
+                      <div className="hidden sm:flex flex-wrap items-center justify-between sm:justify-end gap-4 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
                         <div className="text-left sm:text-right">
                           <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold">Grand Total</div>
                           <div className="font-display font-bold text-base sm:text-xl text-primary">
@@ -2693,15 +2882,17 @@ function NavBtn({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`shrink-0 text-left px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-2.5 transition md:w-full ${
+      aria-current={active ? "page" : undefined}
+      className={`shrink-0 text-left px-3.5 py-2.5 md:py-2 rounded-lg text-xs font-semibold flex items-center gap-2.5 transition md:w-full min-h-[44px] md:min-h-0 cursor-pointer ${
         active
           ? "bg-stone-900 text-white shadow-xs"
           : "text-stone-600 hover:bg-stone-100 hover:text-stone-900"
       }`}
     >
-      <Icon className={`h-4 w-4 ${active ? "text-white" : "text-stone-400"}`} />
-      <span>{children}</span>
+      <Icon className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-stone-400"}`} />
+      <span className="truncate">{children}</span>
     </button>
   );
 }
@@ -2983,19 +3174,33 @@ function ProductEditor({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 grid place-items-center p-4" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-5 overflow-hidden" onClick={onClose}>
       <div
-        className="bg-white rounded-xl border border-border p-6 w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl"
+        className="bg-white rounded-2xl border border-border w-full max-w-xl max-h-[96vh] sm:max-h-[90vh] flex flex-col shadow-2xl overflow-hidden my-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="font-display text-2xl mb-1">
-          {product?.id ? "Edit Product" : "New Product"}
-        </h2>
-        <p className="text-xs text-muted-foreground mb-4">
-          Current Category: <span className="font-semibold text-foreground">{p.category || "None"}</span>
-        </p>
+        {/* Fixed Header */}
+        <div className="p-4 sm:p-6 border-b shrink-0 bg-white flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display text-xl sm:text-2xl font-bold">
+              {product?.id ? "Edit Product" : "New Product"}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Current Category: <span className="font-semibold text-foreground">{p.category || "None"}</span>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2.5 rounded-lg hover:bg-muted border text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer transition shrink-0"
+            aria-label="Close"
+          >
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
 
-        <div className="space-y-6">
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           {/* Section 1: Basic Information */}
           <div className="rounded-xl border border-border bg-[#FDFBF7] p-4 space-y-3 shadow-sm">
             <span className="text-xs font-bold uppercase tracking-wider text-[#166F77] block border-b border-border/60 pb-2">
@@ -3018,7 +3223,7 @@ function ProductEditor({
                       setP((prev) => ({ ...prev, category: firstSub }));
                     }
                   }}
-                  className="mt-1 w-full h-11 rounded-lg border bg-white px-3 text-sm font-medium focus:outline-none focus:border-primary"
+                  className="mt-1 w-full h-11 rounded-lg border bg-white px-3 text-base md:text-sm font-medium focus:outline-none focus:border-primary"
                 >
                   {safeTree.length > 0 ? (
                     safeTree.map((parent: Category & { children?: Category[] }) => (
@@ -3041,7 +3246,7 @@ function ProductEditor({
                 <select
                   value={p.category}
                   onChange={(e) => setP((prev) => ({ ...prev, category: e.target.value }))}
-                  className="mt-1 w-full h-11 rounded-lg border bg-white px-3 text-sm font-medium focus:outline-none focus:border-primary"
+                  className="mt-1 w-full h-11 rounded-lg border bg-white px-3 text-base md:text-sm font-medium focus:outline-none focus:border-primary"
                 >
                   {currentParent ? (
                     <>
@@ -3505,16 +3710,22 @@ function ProductEditor({
           </div>
         </div>
 
-        <div className="flex gap-3 mt-6 justify-end">
-          <button onClick={onClose} className="h-10 px-5 rounded-full border text-sm">
+        {/* Sticky Action Footer */}
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-xs border-t p-3 sm:p-4 flex items-center justify-end gap-3 shrink-0 shadow-xs">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 px-5 rounded-xl border text-sm font-semibold hover:bg-muted transition min-h-[44px] cursor-pointer"
+          >
             Cancel
           </button>
           <button
+            type="button"
             onClick={submit}
             disabled={saving}
-            className="h-10 px-5 rounded-full bg-primary text-primary-foreground text-sm font-medium"
+            className="h-11 px-6 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-primary/90 transition shadow-md disabled:opacity-60 min-h-[44px] cursor-pointer"
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? "Saving..." : "Save Product"}
           </button>
         </div>
       </div>
@@ -3543,7 +3754,7 @@ function In({
         value={value ?? ""}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full h-11 rounded-lg border px-3 bg-background focus:outline-none focus:border-primary"
+        className="mt-1 w-full h-11 rounded-lg border px-3 bg-background focus:outline-none focus:border-primary text-base md:text-sm"
       />
     </label>
   );
@@ -4918,113 +5129,120 @@ function OrderManager({
   const igstVal = order.igst !== undefined ? order.igst : !isIntraState ? computedGstTotal : 0;
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 grid place-items-center p-3 sm:p-5 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-2 sm:p-5 overflow-hidden" onClick={onClose}>
       <div
-        className="bg-white text-foreground rounded-2xl border border-border p-5 sm:p-7 w-full max-w-4xl max-h-[92vh] overflow-y-auto shadow-2xl space-y-6 my-auto"
+        className="bg-white text-foreground rounded-2xl border border-border w-full max-w-4xl max-h-[96vh] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* ---- Top Modal Header ---- */}
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b pb-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <h2 className="font-display text-2xl font-bold text-primary">
-                Order #{displayOrderNumber(order)}
-              </h2>
-              <span
-                className={`px-3 py-0.5 rounded-full text-xs font-semibold ${
-                  order.status === "Delivered"
-                    ? "bg-green-600/10 text-green-700"
-                    : order.status === "Cancelled"
-                      ? "bg-destructive/10 text-destructive"
-                      : order.status === "Hold"
-                        ? "bg-amber-500/15 text-amber-800 border border-amber-300 font-bold"
-                        : "bg-primary/10 text-primary"
-                }`}
-              >
-                {order.status || "Placed"}
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span>Placed on {fmt(order.createdAt)}</span>
-              <span>•</span>
-              <span className="font-semibold text-foreground">Grand Total: {formatINR(order.total)}</span>
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  const txt = generateOrderShippingPlainText(order);
-                  navigator.clipboard.writeText(txt);
-                  toast.success(`Order #${displayOrderNumber(order)} delivery details copied`);
-                } catch {
-                  toast.error("Failed to copy delivery details");
-                }
-              }}
-              className="h-9 px-3 rounded-lg border border-teal-300 bg-teal-50 text-xs font-semibold hover:bg-teal-100 text-teal-850 transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
-              title="Copy complete delivery address & order details to clipboard"
-            >
-              <Copy className="h-3.5 w-3.5 text-teal-700" />
-              <span>Copy Delivery Details</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => downloadOrderPackingSlipPdf(order)}
-              className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
-              title="Download Printable Packing Slip & Dispatch Manifest"
-            >
-              <FileText className="h-3.5 w-3.5 text-teal-700" />
-              <span>Packing Slip (PDF)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => downloadOrderInvoicePdf(order)}
-              className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
-              title="Download Tax Invoice PDF"
-            >
-              <Download className="h-3.5 w-3.5 text-primary" />
-              <span>Download Invoice (PDF)</span>
-            </button>
-            <WhatsAppCustomerButton order={order} template={settings.whatsappTemplate} variant="sm" />
-
-            {fetchEvents && (
-              <div
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-600/10 text-green-700 text-[11px] font-medium"
-                title="Auto-syncs every 15s"
-              >
-                <span className={`h-1.5 w-1.5 rounded-full bg-green-600 ${syncing ? "animate-pulse" : ""}`} />
-                Live -{" "}
-                {lastSync
-                  ? new Date(lastSync).toLocaleTimeString("en-IN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      second: "2-digit",
-                    })
-                  : "syncing..."}
+        <div className="p-4 sm:p-6 border-b shrink-0 bg-white">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h2 className="font-display text-xl sm:text-2xl font-bold text-primary">
+                  Order #{displayOrderNumber(order)}
+                </h2>
+                <span
+                  className={`px-3 py-0.5 rounded-full text-xs font-semibold ${
+                    order.status === "Delivered"
+                      ? "bg-green-600/10 text-green-700"
+                      : order.status === "Cancelled"
+                        ? "bg-destructive/10 text-destructive"
+                        : order.status === "Hold"
+                          ? "bg-amber-500/15 text-amber-800 border border-amber-300 font-bold"
+                          : "bg-primary/10 text-primary"
+                  }`}
+                >
+                  {order.status || "Placed"}
+                </span>
               </div>
-            )}
-            {fetchEvents && (
+              <p className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>Placed on {fmt(order.createdAt)}</span>
+                <span>•</span>
+                <span className="font-semibold text-foreground">Grand Total: {formatINR(order.total)}</span>
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
               <button
-                onClick={manualRefresh}
-                disabled={syncing}
-                className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 border"
-                aria-label="Refresh events"
-                title="Refresh order events"
+                type="button"
+                onClick={() => {
+                  try {
+                    const txt = generateOrderShippingPlainText(order);
+                    navigator.clipboard.writeText(txt);
+                    toast.success(`Order #${displayOrderNumber(order)} delivery details copied`);
+                  } catch {
+                    toast.error("Failed to copy delivery details");
+                  }
+                }}
+                className="h-9 px-3 rounded-lg border border-teal-300 bg-teal-50 text-xs font-semibold hover:bg-teal-100 text-teal-850 transition inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title="Copy complete delivery address & order details to clipboard"
               >
-                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                <Copy className="h-3.5 w-3.5 text-teal-700" />
+                <span>Copy Delivery Details</span>
               </button>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-muted border text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
+              <button
+                type="button"
+                onClick={() => downloadOrderPackingSlipPdf(order)}
+                className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Download Printable Packing Slip & Dispatch Manifest"
+              >
+                <FileText className="h-3.5 w-3.5 text-teal-700" />
+                <span>Packing Slip (PDF)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => downloadOrderInvoicePdf(order)}
+                className="h-9 px-3 rounded-lg border border-border bg-card text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-1.5 shadow-sm cursor-pointer"
+                title="Download Tax Invoice PDF"
+              >
+                <Download className="h-3.5 w-3.5 text-primary" />
+                <span>Download Invoice (PDF)</span>
+              </button>
+              <WhatsAppCustomerButton order={order} template={settings.whatsappTemplate} variant="sm" />
+
+              {fetchEvents && (
+                <div
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-600/10 text-green-700 text-[11px] font-medium"
+                  title="Auto-syncs every 15s"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full bg-green-600 ${syncing ? "animate-pulse" : ""}`} />
+                  Live -{" "}
+                  {lastSync
+                    ? new Date(lastSync).toLocaleTimeString("en-IN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      })
+                    : "syncing..."}
+                </div>
+              )}
+              {fetchEvents && (
+                <button
+                  type="button"
+                  onClick={manualRefresh}
+                  disabled={syncing}
+                  className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 border cursor-pointer"
+                  aria-label="Refresh events"
+                  title="Refresh order events"
+                >
+                  <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-lg hover:bg-muted border text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer transition"
+                aria-label="Close"
+              >
+                <XIcon className="h-5 w-5" />
+              </button>
+            </div>
           </div>
         </div>
+
+        {/* Scrollable Modal Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
 
         {/* ---- Invoice Request Alert Banner ---- */}
         {order.invoiceRequest?.status === "pending" && (
@@ -5220,9 +5438,58 @@ function OrderManager({
         <div className="rounded-xl border bg-card overflow-hidden">
           <div className="bg-muted/40 px-4 py-2.5 border-b flex items-center justify-between text-xs font-bold text-foreground">
             <span>Itemized Products & Tax Details ({enrichedItems.length})</span>
-            <span className="text-muted-foreground font-normal">Seller GSTIN: 09CHYPN5573J1Z9</span>
+            <span className="text-muted-foreground font-normal text-[11px]">Seller GSTIN: 09CHYPN5573J1Z9</span>
           </div>
-          <div className="overflow-x-auto">
+
+          {/* Mobile item cards (< md) */}
+          <div className="block md:hidden divide-y divide-border/60">
+            {enrichedItems.map((item) => (
+              <div key={item.idx} className="p-3.5 space-y-2 bg-white">
+                <div className="flex items-start gap-3">
+                  {item.image ? (
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="h-12 w-12 rounded-lg object-cover bg-muted border shrink-0"
+                    />
+                  ) : (
+                    <div className="h-12 w-12 rounded-lg bg-stone-100 border flex items-center justify-center shrink-0 text-stone-400">
+                      <Package className="h-5 w-5" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-xs text-foreground leading-snug line-clamp-2">{item.name}</p>
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground flex-wrap">
+                      <span>Qty: <strong className="text-foreground">{item.qty}</strong></span>
+                      <span>•</span>
+                      <span>{formatINR(item.unitPrice)}</span>
+                      {item.hsn !== "-" && (
+                        <>
+                          <span>•</span>
+                          <span className="font-mono text-[10px]">HSN: {item.hsn}</span>
+                        </>
+                      )}
+                      {item.gstRate > 0 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-[10px] bg-stone-100 px-1 py-0.2 rounded font-medium">GST {item.gstRate}%</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="block font-bold text-xs text-primary">{formatINR(item.itemTotal)}</span>
+                    {item.gstAmt > 0 && (
+                      <span className="block text-[10px] text-muted-foreground">GST: {formatINR(item.gstAmt)}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop item table (>= md) */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead className="bg-muted/20 border-b text-[11px] uppercase tracking-wider text-muted-foreground">
                 <tr>
@@ -5681,7 +5948,7 @@ function OrderManager({
               <select
                 value={courier}
                 onChange={(e) => setCourier(e.target.value as Courier | "")}
-                className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-sm focus:outline-none focus:border-primary"
+                className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-base md:text-sm focus:outline-none focus:border-primary"
               >
                 <option value="">- Not assigned -</option>
                 {COURIERS.map((c) => (
@@ -5698,7 +5965,7 @@ function OrderManager({
                 value={trackingId}
                 onChange={(e) => setTrackingId(e.target.value)}
                 placeholder="e.g. U2000337996"
-                className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-sm font-mono uppercase focus:outline-none focus:border-primary"
+                className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-base md:text-sm font-mono uppercase focus:outline-none focus:border-primary"
               />
             </label>
 
@@ -5707,7 +5974,7 @@ function OrderManager({
               <select
                 value={status}
                 onChange={(e) => handleStatusSelect(e.target.value as Order["status"])}
-                className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-sm font-semibold focus:outline-none focus:border-primary"
+                className="mt-1 w-full h-11 rounded-lg border bg-background px-3 text-base md:text-sm font-semibold focus:outline-none focus:border-primary"
               >
                 {(isManager ? [status, ...allowedNextStatuses] : STATUSES).map((s) => (
                   <option key={s} value={s}>
@@ -5737,7 +6004,7 @@ function OrderManager({
                 value={holdReason}
                 onChange={(e) => setHoldReason(e.target.value)}
                 placeholder="Mandatory reason for putting order on hold"
-                className="w-full h-10 rounded-lg border border-amber-300 bg-amber-50/50 px-3 text-xs focus:outline-none focus:border-amber-600 text-amber-950 font-medium"
+                className="w-full h-10 rounded-lg border border-amber-300 bg-amber-50/50 px-3 text-base md:text-xs focus:outline-none focus:border-amber-600 text-amber-950 font-medium"
               />
             </div>
           )}
@@ -5748,7 +6015,7 @@ function OrderManager({
               value={courierTrackingUrl}
               onChange={(e) => setCourierTrackingUrl(e.target.value)}
               placeholder={derivedUrl ? `Auto-derived: ${derivedUrl}` : "https://courier.com/track/..."}
-              className="mt-1 w-full h-10 rounded-lg border bg-background px-3 text-xs focus:outline-none focus:border-primary font-mono"
+              className="mt-1 w-full h-10 rounded-lg border bg-background px-3 text-base md:text-xs focus:outline-none focus:border-primary font-mono"
             />
           </label>
         </div>
@@ -5878,48 +6145,46 @@ function OrderManager({
           )}
         </div>
 
-        {/* ---- Notice & Action Buttons ---- */}
-        <div className="border-t pt-4 space-y-3">
-          <p className="text-xs text-muted-foreground text-center sm:text-left">
-            Saving updates the Tracking ID and order status. A transactional notification email with the updated PDF invoice will be automatically sent to the customer.
-          </p>
+        </div> {/* End scrollable modal body */}
 
-          <div className="flex flex-wrap gap-3 justify-between items-center">
-            <div className="flex flex-wrap items-center gap-2">
+        {/* ---- Sticky Modal Footer ---- */}
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-xs border-t p-3 sm:p-4 shrink-0 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => downloadOrderInvoicePdf(order)}
+              className="h-11 px-4 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center justify-center gap-2 min-h-[44px] cursor-pointer"
+            >
+              <Download className="h-4 w-4 text-primary shrink-0" />
+              <span className="truncate">Download Invoice (PDF)</span>
+            </button>
+            {order.invoiceRequest?.status === "pending" && onSendInvoice && (
               <button
                 type="button"
-                onClick={() => downloadOrderInvoicePdf(order)}
-                className="h-11 px-5 rounded-xl border border-border text-xs font-semibold hover:bg-muted text-foreground transition inline-flex items-center gap-2"
+                onClick={() => onSendInvoice(order)}
+                className="h-11 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition inline-flex items-center justify-center gap-2 shadow-sm min-h-[44px] cursor-pointer"
               >
-                <Download className="h-4 w-4 text-primary" />
-                <span>Download Invoice (PDF)</span>
+                <Send className="h-4 w-4 shrink-0" />
+                <span className="truncate">Send Invoice</span>
               </button>
-              {order.invoiceRequest?.status === "pending" && onSendInvoice && (
-                <button
-                  type="button"
-                  onClick={() => onSendInvoice(order)}
-                  className="h-11 px-5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition inline-flex items-center gap-2 shadow-sm"
-                >
-                  <Send className="h-4 w-4" />
-                  <span>Send Invoice to Customer</span>
-                </button>
-              )}
-            </div>
+            )}
+          </div>
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onClose}
-                className="h-11 px-6 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={submit}
-                className="h-11 px-7 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center gap-2 hover:bg-primary/90 transition shadow-md"
-              >
-                <Truck className="h-4 w-4" /> Save & Notify Customer
-              </button>
-            </div>
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 sm:flex-initial h-11 px-5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition min-h-[44px] cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={submit}
+              className="flex-1 sm:flex-initial h-11 px-6 rounded-xl bg-primary text-primary-foreground text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-primary/90 transition shadow-md min-h-[44px] cursor-pointer"
+            >
+              <Truck className="h-4 w-4 shrink-0" /> Save & Notify
+            </button>
           </div>
         </div>
 
@@ -6472,7 +6737,7 @@ function CategoryRow({
         className="h-5 w-5 cursor-grab text-muted-foreground/60 hover:text-foreground"
         aria-label={`Drag ${category.name} to sort`}
       />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[150px] flex-1">
         <div className="flex items-center gap-2 flex-wrap">
           <p className={`font-semibold ${child ? "text-sm text-foreground" : "font-display text-base sm:text-lg text-foreground"}`}>
             {category.name}
@@ -6494,21 +6759,21 @@ function CategoryRow({
         </p>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto sm:justify-end">
         {!child && onAddSubcategory && (
           <button
             type="button"
             onClick={onAddSubcategory}
-            className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/5 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/15 transition mr-1"
+            className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/5 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/15 transition min-h-[44px] cursor-pointer whitespace-nowrap"
           >
-            <Plus className="h-3.5 w-3.5" /> Subcategory
+            <Plus className="h-3.5 w-3.5 shrink-0" /> Subcategory
           </button>
         )}
 
         <button
           type="button"
           onClick={onToggleActive}
-          className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground transition"
+          className="rounded-lg p-2 hover:bg-muted text-muted-foreground hover:text-foreground transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
           title={category.isActive ? "Click to Hide from storefront" : "Click to Show in storefront"}
           aria-label={`Toggle visibility of ${category.name}`}
         >
@@ -6518,7 +6783,7 @@ function CategoryRow({
         <button
           type="button"
           onClick={() => onMove(category, -1)}
-          className="rounded-md border px-2 py-1 text-xs hover:bg-muted font-mono"
+          className="rounded-md border px-2.5 py-1 text-xs hover:bg-muted font-mono min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer font-bold text-stone-800"
           aria-label={`Move ${category.name} up`}
         >
           ↑
@@ -6526,7 +6791,7 @@ function CategoryRow({
         <button
           type="button"
           onClick={() => onMove(category, 1)}
-          className="rounded-md border px-2 py-1 text-xs hover:bg-muted font-mono"
+          className="rounded-md border px-2.5 py-1 text-xs hover:bg-muted font-mono min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer font-bold text-stone-800"
           aria-label={`Move ${category.name} down`}
         >
           ↓
@@ -6534,7 +6799,7 @@ function CategoryRow({
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-lg p-1.5 hover:bg-muted text-muted-foreground hover:text-foreground transition"
+          className="rounded-lg p-2 hover:bg-muted text-muted-foreground hover:text-foreground transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
           aria-label={`Edit ${category.name}`}
         >
           <Pencil className="h-4 w-4" />
@@ -6546,7 +6811,7 @@ function CategoryRow({
             if (confirm(`Delete ${category.name}? Products in it will be hidden.`))
               onDelete(category.name);
           }}
-          className="rounded-lg p-1.5 text-destructive hover:bg-destructive/10 transition"
+          className="rounded-lg p-2 text-destructive hover:bg-destructive/10 transition min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer"
           aria-label={`Delete ${category.name}`}
         >
           <Trash2 className="h-4 w-4" />
@@ -6571,7 +6836,7 @@ function CategoryEditor({
   const [value, setValue] = useState(category);
   const [saving, setSaving] = useState(false);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4 overflow-hidden" onClick={onClose}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -6580,95 +6845,116 @@ function CategoryEditor({
           setSaving(true);
           void Promise.resolve(onSave({ ...value, name })).finally(() => setSaving(false));
         }}
-        className="max-h-[90vh] w-full max-w-lg space-y-4 overflow-y-auto rounded-xl bg-card p-6 shadow-2xl"
+        className="max-h-[96vh] sm:max-h-[90vh] w-full max-w-lg flex flex-col rounded-2xl bg-card shadow-2xl overflow-hidden"
         onClick={(event) => event.stopPropagation()}
       >
-        <div>
-          <h2 className="font-display text-2xl">
-            {category.id ? "Edit Category" : "New Category"}
-          </h2>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Organize main categories and subcategories for the storefront navigation.
-          </p>
-        </div>
-        <In
-          label="Category name *"
-          value={value.name}
-          onChange={(name) => setValue({ ...value, name })}
-          placeholder="e.g. Tulsi Mala or Japa Mala"
-        />
-        <In
-          label="SEO slug (optional - auto-generated if empty)"
-          value={value.slug ?? ""}
-          onChange={(slug) => setValue({ ...value, slug })}
-          placeholder="e.g. tulsi-mala"
-        />
-        <label className="block text-sm">
-          <span className="text-xs font-medium text-muted-foreground">Parent Category</span>
-          <select
-            value={value.parentId ?? ""}
-            onChange={(event) => setValue({ ...value, parentId: event.target.value || null })}
-            className="mt-1 h-11 w-full rounded-lg border bg-background px-3 text-sm font-medium focus:outline-none focus:border-primary"
+        {/* Fixed Header */}
+        <div className="p-4 sm:p-6 border-b shrink-0 bg-card flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-display text-xl sm:text-2xl font-bold">
+              {category.id ? "Edit Category" : "New Category"}
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Organize main categories and subcategories for the storefront navigation.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2.5 rounded-lg hover:bg-muted border text-muted-foreground hover:text-foreground min-h-[44px] min-w-[44px] flex items-center justify-center cursor-pointer transition shrink-0"
+            aria-label="Close"
           >
-            <option value="">None (Top level / Main Category)</option>
-            {parents.map((parent) => (
-              <option key={parent.id} value={parent.id}>
-                {parent.name} {!parent.isActive ? "(Hidden)" : ""}
-              </option>
-            ))}
-          </select>
-          <span className="text-[11px] text-muted-foreground mt-1 block">
-            Choose a parent to make this a subcategory, or leave as &quot;None&quot; for a main category.
-          </span>
-        </label>
-        <AdminImageUpload
-          label="Category banner / icon image"
-          value={value.image ?? ""}
-          onChange={(image) => setValue({ ...value, image })}
-        />
-        <label className="block text-sm">
-          <span className="text-xs font-medium text-muted-foreground">Description</span>
-          <textarea
-            value={value.description ?? ""}
-            onChange={(event) => setValue({ ...value, description: event.target.value })}
-            rows={3}
-            placeholder="Devotional description for this category..."
-            className="mt-1 w-full rounded-lg border bg-background p-3 text-sm focus:outline-none focus:border-primary"
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Scrollable Form Body */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+          <In
+            label="Category name *"
+            value={value.name}
+            onChange={(name) => setValue({ ...value, name })}
+            placeholder="e.g. Tulsi Mala or Japa Mala"
           />
-        </label>
-        <In
-          label="Meta title (SEO)"
-          value={value.metaTitle ?? ""}
-          onChange={(metaTitle) => setValue({ ...value, metaTitle })}
-          placeholder="e.g. Buy Original Tulsi Mala Online | Shri Radha Govind Store"
-        />
-        <label className="block text-sm">
-          <span className="text-xs font-medium text-muted-foreground">Meta description (SEO)</span>
-          <textarea
-            value={value.metaDescription ?? ""}
-            onChange={(event) => setValue({ ...value, metaDescription: event.target.value })}
-            rows={2}
-            placeholder="Brief Google snippet (up to 160 chars)..."
-            className="mt-1 w-full rounded-lg border bg-background p-3 text-sm focus:outline-none focus:border-primary"
+          <In
+            label="SEO slug (optional - auto-generated if empty)"
+            value={value.slug ?? ""}
+            onChange={(slug) => setValue({ ...value, slug })}
+            placeholder="e.g. tulsi-mala"
           />
-        </label>
-        <label className="flex items-center gap-2 text-sm font-medium cursor-pointer pt-1">
-          <input
-            type="checkbox"
-            checked={value.isActive ?? true}
-            onChange={(event) => setValue({ ...value, isActive: event.target.checked })}
-            className="h-4 w-4 rounded border-border text-primary"
+          <label className="block text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Parent Category</span>
+            <select
+              value={value.parentId ?? ""}
+              onChange={(event) => setValue({ ...value, parentId: event.target.value || null })}
+              className="mt-1 h-11 w-full rounded-lg border bg-background px-3 text-base md:text-sm font-medium focus:outline-none focus:border-primary"
+            >
+              <option value="">None (Top level / Main Category)</option>
+              {parents.map((parent) => (
+                <option key={parent.id} value={parent.id}>
+                  {parent.name} {!parent.isActive ? "(Hidden)" : ""}
+                </option>
+              ))}
+            </select>
+            <span className="text-[11px] text-muted-foreground mt-1 block">
+              Choose a parent to make this a subcategory, or leave as &quot;None&quot; for a main category.
+            </span>
+          </label>
+          <AdminImageUpload
+            label="Category banner / icon image"
+            value={value.image ?? ""}
+            onChange={(image) => setValue({ ...value, image })}
           />
-          <span>Visible in storefront (Unchecking hides it from navigation)</span>
-        </label>
-        <div className="flex justify-end gap-3 pt-2">
-          <button type="button" onClick={onClose} className="h-10 rounded-full border px-5 text-sm hover:bg-muted">
+          <label className="block text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Description</span>
+            <textarea
+              value={value.description ?? ""}
+              onChange={(event) => setValue({ ...value, description: event.target.value })}
+              rows={3}
+              placeholder="Devotional description for this category..."
+              className="mt-1 w-full rounded-lg border bg-background p-3 text-base md:text-sm focus:outline-none focus:border-primary"
+            />
+          </label>
+          <In
+            label="Meta title (SEO)"
+            value={value.metaTitle ?? ""}
+            onChange={(metaTitle) => setValue({ ...value, metaTitle })}
+            placeholder="e.g. Buy Original Tulsi Mala Online | Shri Radha Govind Store"
+          />
+          <label className="block text-sm">
+            <span className="text-xs font-medium text-muted-foreground">Meta description (SEO)</span>
+            <textarea
+              value={value.metaDescription ?? ""}
+              onChange={(event) => setValue({ ...value, metaDescription: event.target.value })}
+              rows={2}
+              placeholder="Brief Google snippet (up to 160 chars)..."
+              className="mt-1 w-full rounded-lg border bg-background p-3 text-base md:text-sm focus:outline-none focus:border-primary"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer pt-1">
+            <input
+              type="checkbox"
+              checked={value.isActive ?? true}
+              onChange={(event) => setValue({ ...value, isActive: event.target.checked })}
+              className="h-4 w-4 rounded border-border text-primary"
+            />
+            <span>Visible in storefront (Unchecking hides it from navigation)</span>
+          </label>
+        </div>
+
+        {/* Sticky Action Footer */}
+        <div className="sticky bottom-0 bg-card/95 backdrop-blur-xs border-t p-3 sm:p-4 flex justify-end gap-3 shrink-0 shadow-xs">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 rounded-xl border px-5 text-sm font-semibold hover:bg-muted transition min-h-[44px] cursor-pointer"
+          >
             Cancel
           </button>
           <button
             type="submit"
             disabled={saving}
-            className="h-10 rounded-full bg-primary px-6 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90"
+            className="h-11 rounded-xl bg-primary px-6 text-sm font-semibold text-primary-foreground shadow hover:bg-primary/90 transition min-h-[44px] cursor-pointer"
           >
             {saving ? "Saving..." : "Save Category"}
           </button>

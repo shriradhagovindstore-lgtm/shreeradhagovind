@@ -461,9 +461,132 @@ export function InventoryManager({ onStockUpdated }: { onStockUpdated?: () => vo
         </div>
       </div>
 
-      {/* Inventory Products Table */}
+      {/* Inventory Products Table & Mobile Cards */}
       <div className="bg-white rounded-xl border border-stone-200 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile Inventory Cards (visible on screens below md: breakpoint) */}
+        <div className="block md:hidden divide-y divide-stone-100">
+          {loading ? (
+            <div className="p-8 text-center text-stone-400">
+              <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2 text-[#166F77]" />
+              Loading inventory data...
+            </div>
+          ) : products.length === 0 ? (
+            <div className="p-8 text-center text-stone-400 text-xs">
+              No products found matching the current search and filter criteria.
+            </div>
+          ) : (
+            products.map((p) => {
+              const currentStock = Number(p.stock ?? 0);
+              const isLow = currentStock >= 1 && currentStock <= 5;
+              const isOut = currentStock <= 0;
+              const outSince = p.outOfStockSince ? new Date(p.outOfStockSince) : null;
+              const elapsedMs = outSince ? Date.now() - outSince.getTime() : null;
+              const elapsedHours = elapsedMs !== null ? Math.floor(elapsedMs / (1000 * 60 * 60)) : null;
+
+              return (
+                <div key={p.id || p._id} className="p-3.5 space-y-3 bg-white">
+                  <div className="flex items-start gap-3">
+                    {p.image ? (
+                      <img
+                        src={p.image}
+                        alt=""
+                        className="h-12 w-12 rounded-lg object-contain bg-stone-50 border border-stone-200 shrink-0"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-lg bg-stone-100 border border-stone-200 flex items-center justify-center text-stone-400 shrink-0">
+                        <Package className="h-6 w-6" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-stone-900 text-xs leading-snug line-clamp-2">{p.name}</p>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-stone-500">
+                        <span className="font-mono">{p.category}</span>
+                        <span>•</span>
+                        <span className="font-bold text-stone-900">{formatINR(p.price)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-stone-50 border border-stone-200/80 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-stone-500 font-medium">Stock:</span>
+                      <span className="font-mono font-bold text-sm text-stone-900">{currentStock}</span>
+                      {currentStock > 5 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          In Stock
+                        </span>
+                      ) : isLow ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded-full">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                          Low ({currentStock})
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-800 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                          Out
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      {currentStock > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                          <Eye className="h-3 w-3" /> Live
+                        </span>
+                      ) : p.isHiddenFromStorefront ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-stone-600 bg-stone-100 border border-stone-300 px-2 py-0.5 rounded">
+                          <EyeOff className="h-3 w-3 text-stone-500" /> Hidden (&gt;24h)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-300 px-2 py-0.5 rounded">
+                          <Clock className="h-3 w-3 text-amber-600" />
+                          {elapsedHours !== null ? `${24 - Math.min(24, elapsedHours)}h left` : "<24h"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {p.waitlistCount > 0 && (
+                    <div className="flex items-center justify-between text-xs pt-0.5">
+                      <span className="text-amber-800 font-medium">Customer Waitlist:</span>
+                      <button
+                        type="button"
+                        onClick={() => openWaitlistModal(p)}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-full cursor-pointer"
+                      >
+                        <BellRing className="h-3.5 w-3.5 text-amber-700" />
+                        {p.waitlistCount} waiting
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => openAdjustModal(p)}
+                      className="min-h-[44px] rounded-lg bg-[#166F77] hover:bg-[#125A61] text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      <span>Adjust Stock</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openHistoryModal(p)}
+                      className="min-h-[44px] rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-stone-700 font-semibold text-xs flex items-center justify-center gap-1.5 transition shadow-xs cursor-pointer"
+                    >
+                      <History className="h-3.5 w-3.5 text-stone-500" />
+                      <span>Stock History</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Inventory Products Table (preserved unchanged at md: and above) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 uppercase tracking-wider text-[10px] font-bold">
               <tr>
@@ -638,12 +761,12 @@ export function InventoryManager({ onStockUpdated }: { onStockUpdated?: () => vo
 
       {/* MODAL 1: Safe Stock Adjustment */}
       {adjustModalProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200 space-y-5 animate-in zoom-in-95">
-            <div className="flex items-start justify-between">
-              <div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-black/50 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] [@supports(max-height:90dvh)]:max-h-[90dvh] flex flex-col shadow-xl border border-stone-200 overflow-hidden animate-in zoom-in-95">
+            <div className="p-4 sm:p-6 pb-3 sm:pb-4 border-b border-stone-100 flex items-start justify-between gap-3 shrink-0 bg-white">
+              <div className="min-w-0">
                 <h3 className="font-display text-lg text-stone-900 flex items-center gap-2">
-                  <SlidersHorizontal className="h-5 w-5 text-[#166F77]" />
+                  <SlidersHorizontal className="h-5 w-5 text-[#166F77] shrink-0" />
                   Adjust Product Stock
                 </h3>
                 <p className="text-xs text-stone-500 mt-0.5">
@@ -651,169 +774,173 @@ export function InventoryManager({ onStockUpdated }: { onStockUpdated?: () => vo
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setAdjustModalProduct(null)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer shrink-0"
+                aria-label="Close adjust modal"
               >
                 <XIcon className="h-5 w-5" />
               </button>
             </div>
 
-            {/* Product Summary */}
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-stone-50 border border-stone-200">
-              {adjustModalProduct.image ? (
-                <img
-                  src={adjustModalProduct.image}
-                  alt=""
-                  className="h-12 w-12 rounded-lg object-contain bg-white border border-stone-200 shrink-0"
-                />
-              ) : (
-                <div className="h-12 w-12 rounded-lg bg-stone-200 flex items-center justify-center text-stone-400 shrink-0">
-                  <Package className="h-6 w-6" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-xs text-stone-900 truncate">{adjustModalProduct.name}</p>
-                <p className="text-[11px] text-stone-500">{adjustModalProduct.category} · {formatINR(adjustModalProduct.price)}</p>
-                <p className="text-[11px] font-semibold text-[#166F77] mt-0.5">
-                  Current Stock: {currentStock} units
-                </p>
-              </div>
-            </div>
-
-            <form onSubmit={handleAdjustSubmit} className="space-y-4">
-              {/* Action Tabs: Add / Remove / Set */}
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1.5">
-                  Adjustment Type:
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAdjustAction("add")}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                      adjustAction === "add"
-                        ? "bg-emerald-600 text-white shadow-xs"
-                        : "bg-stone-100 text-stone-700 hover:bg-stone-200"
-                    }`}
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Add Stock
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustAction("remove")}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                      adjustAction === "remove"
-                        ? "bg-rose-600 text-white shadow-xs"
-                        : "bg-stone-100 text-stone-700 hover:bg-stone-200"
-                    }`}
-                  >
-                    <Minus className="h-3.5 w-3.5" /> Remove Stock
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdjustAction("set")}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                      adjustAction === "set"
-                        ? "bg-[#166F77] text-white shadow-xs"
-                        : "bg-stone-100 text-stone-700 hover:bg-stone-200"
-                    }`}
-                  >
-                    Set Stock
-                  </button>
+            <div className="flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6 pt-4 space-y-5 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              {/* Product Summary */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-stone-50 border border-stone-200">
+                {adjustModalProduct.image ? (
+                  <img
+                    src={adjustModalProduct.image}
+                    alt=""
+                    className="h-12 w-12 rounded-lg object-contain bg-white border border-stone-200 shrink-0"
+                  />
+                ) : (
+                  <div className="h-12 w-12 rounded-lg bg-stone-200 flex items-center justify-center text-stone-400 shrink-0">
+                    <Package className="h-6 w-6" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-xs text-stone-900 truncate">{adjustModalProduct.name}</p>
+                  <p className="text-[11px] text-stone-500">{adjustModalProduct.category} · {formatINR(adjustModalProduct.price)}</p>
+                  <p className="text-[11px] font-semibold text-[#166F77] mt-0.5">
+                    Current Stock: {currentStock} units
+                  </p>
                 </div>
               </div>
 
-              {/* Quantity Input */}
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  {adjustAction === "set" ? "New Total Stock Quantity:" : "Quantity to Change:"}
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  required
-                  value={adjustQuantity}
-                  onChange={(e) => setAdjustQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                  className="w-full h-10 px-3 rounded-lg border border-stone-200 text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#166F77]"
-                />
-              </div>
-
-              {/* Projected Stock Preview */}
-              <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-200 flex items-center justify-between text-xs">
+              <form onSubmit={handleAdjustSubmit} className="space-y-4">
+                {/* Action Tabs: Add / Remove / Set */}
                 <div>
-                  <span className="text-teal-800 font-medium">Projected Stock:</span>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-stone-500 font-semibold">{currentStock}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-teal-600" />
-                    <span className="text-teal-900 font-bold text-sm">{previewStock}</span>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1.5">
+                    Adjustment Type:
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAdjustAction("add")}
+                      className={`min-h-[44px] py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer ${
+                        adjustAction === "add"
+                          ? "bg-emerald-600 text-white shadow-xs"
+                          : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                      }`}
+                    >
+                      <Plus className="h-3.5 w-3.5 shrink-0" /> Add Stock
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustAction("remove")}
+                      className={`min-h-[44px] py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer ${
+                        adjustAction === "remove"
+                          ? "bg-rose-600 text-white shadow-xs"
+                          : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                      }`}
+                    >
+                      <Minus className="h-3.5 w-3.5 shrink-0" /> Remove
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAdjustAction("set")}
+                      className={`min-h-[44px] py-2 px-2 sm:px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer ${
+                        adjustAction === "set"
+                          ? "bg-[#166F77] text-white shadow-xs"
+                          : "bg-stone-100 text-stone-700 hover:bg-stone-200"
+                      }`}
+                    >
+                      Set Stock
+                    </button>
                   </div>
                 </div>
-                <span
-                  className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
-                    previewDelta > 0
-                      ? "bg-emerald-100 text-emerald-800"
-                      : previewDelta < 0
-                      ? "bg-rose-100 text-rose-800"
-                      : "bg-stone-200 text-stone-700"
-                  }`}
-                >
-                  Delta: {previewDelta > 0 ? `+${previewDelta}` : previewDelta}
-                </span>
-              </div>
 
-              {/* Mandatory Reason */}
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Adjustment Reason <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={adjustReason}
-                  onChange={(e) => setAdjustReason(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-stone-200 bg-white text-xs font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#166F77]"
-                >
-                  {VALID_REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                {/* Quantity Input */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    {adjustAction === "set" ? "New Total Stock Quantity:" : "Quantity to Change:"}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value={adjustQuantity}
+                    onChange={(e) => setAdjustQuantity(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="w-full h-11 px-3 rounded-lg border border-stone-200 text-base md:text-sm font-semibold text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#166F77]"
+                  />
+                </div>
 
-              {/* Explanatory Note */}
-              <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">
-                  Explanatory Note {adjustReason === "Other" && <span className="text-rose-500">* (Required)</span>}
-                </label>
-                <input
-                  type="text"
-                  placeholder={adjustReason === "Other" ? "Detailed explanation required..." : "Optional internal memo or PO reference..."}
-                  value={adjustNote}
-                  onChange={(e) => setAdjustNote(e.target.value)}
-                  required={adjustReason === "Other"}
-                  className="w-full h-9 px-3 rounded-lg border border-stone-200 text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#166F77]"
-                />
-              </div>
+                {/* Projected Stock Preview */}
+                <div className="p-3 rounded-xl bg-teal-50/70 border border-teal-200 flex items-center justify-between text-xs gap-2">
+                  <div>
+                    <span className="text-teal-800 font-medium">Projected Stock:</span>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-stone-500 font-semibold">{currentStock}</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-teal-600" />
+                      <span className="text-teal-900 font-bold text-sm">{previewStock}</span>
+                    </div>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded-full font-bold text-[11px] shrink-0 ${
+                      previewDelta > 0
+                        ? "bg-emerald-100 text-emerald-800"
+                        : previewDelta < 0
+                        ? "bg-rose-100 text-rose-800"
+                        : "bg-stone-200 text-stone-700"
+                    }`}
+                  >
+                    Delta: {previewDelta > 0 ? `+${previewDelta}` : previewDelta}
+                  </span>
+                </div>
 
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-2.5 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setAdjustModalProduct(null)}
-                  className="px-4 py-2 rounded-lg border border-stone-200 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={adjustSubmitting}
-                  className="px-5 py-2 rounded-lg bg-[#166F77] hover:bg-[#125A61] text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
-                >
-                  {adjustSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  Confirm &amp; Record Adjustment
-                </button>
-              </div>
-            </form>
+                {/* Mandatory Reason */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Adjustment Reason <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    className="w-full h-11 px-3 rounded-lg border border-stone-200 bg-white text-base md:text-xs font-medium text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#166F77]"
+                  >
+                    {VALID_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Explanatory Note */}
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 mb-1">
+                    Explanatory Note {adjustReason === "Other" && <span className="text-rose-500">* (Required)</span>}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={adjustReason === "Other" ? "Detailed explanation required..." : "Optional internal memo or PO reference..."}
+                    value={adjustNote}
+                    onChange={(e) => setAdjustNote(e.target.value)}
+                    required={adjustReason === "Other"}
+                    className="w-full h-11 px-3 rounded-lg border border-stone-200 text-base md:text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-[#166F77]"
+                  />
+                </div>
+
+                {/* Modal Actions */}
+                <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustModalProduct(null)}
+                    className="min-h-[44px] px-4 py-2 rounded-lg border border-stone-200 text-xs font-semibold text-stone-600 hover:bg-stone-50 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={adjustSubmitting}
+                    className="min-h-[44px] px-5 py-2 rounded-lg bg-[#166F77] hover:bg-[#125A61] text-xs font-semibold text-white transition flex items-center gap-1.5 shadow-xs disabled:opacity-60 cursor-pointer"
+                  >
+                    {adjustSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    Confirm &amp; Record Adjustment
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -833,8 +960,10 @@ export function InventoryManager({ onStockUpdated }: { onStockUpdated?: () => vo
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setHistoryModalOpen(false)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                aria-label="Close history modal"
               >
                 <XIcon className="h-5 w-5" />
               </button>
@@ -968,8 +1097,10 @@ export function InventoryManager({ onStockUpdated }: { onStockUpdated?: () => vo
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setWaitlistModalProduct(null)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition cursor-pointer"
+                aria-label="Close waitlist modal"
               >
                 <XIcon className="h-5 w-5" />
               </button>
